@@ -34,6 +34,7 @@ pub mod model;
 pub mod opener;
 pub mod paths;
 pub mod player;
+pub mod radio;
 pub mod resample;
 pub mod settings;
 pub mod single_instance;

@@ -42,6 +42,9 @@ everyday use, and connection details.
   after 0.7.1).
 - **Search** across songs, artists, albums, playlists, podcasts, and episodes,
   with a top result and per-type views. Right-click results and cards for their actions.
+- **Song radio.** Choose **Go to song radio** to browse Spotify's station
+  without changing playback, or **Start song radio** to play it immediately.
+  Browsing uses the local playback sign-in; it does not activate this device.
 - **Home** with Made for you, Recently played, your top artists and songs, and
   recommendations. Right-click playlist shortcuts and shelf cards for their actions.
 - **Artist pages** with popular songs, a filterable discography, and related

@@ -113,6 +113,18 @@ Changing the option while the mini player is open replaces that window while
 playback continues. This setting is available on Windows; it does not change
 Linux panels or the macOS Dock.
 
+## Song radio
+
+Right-click a song and choose **Go to song radio** to open its station as a
+page. This keeps your music and queue playing as they are. The page shows
+Spotify's current selection; its play button and song rows play that exact
+list. Choose **Refresh radio** to ask for a new selection.
+
+Choose **Start song radio** to start the station immediately on this
+computer and show the Queue tab. Browsing radio requires the local playback
+sign-in too, but does not start or transfer playback. If it is not set up,
+complete **Set up playback here**, then retry the radio page.
+
 ## Recent
 
 The queue panel's second tab combines Spotify's history with tracks played

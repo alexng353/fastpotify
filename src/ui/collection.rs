@@ -422,7 +422,10 @@ pub fn table(app: &mut App, ui: &mut egui::Ui, table: Table<'_>) {
     // positions that no longer match the screen.
     let context = if let Some(uris) = &entry.view_uris {
         match &table.context {
-            RowContext::Context { uri, .. } => RowContext::View {
+            RowContext::Context { uri, .. }
+            | RowContext::View {
+                context_uri: uri, ..
+            } => RowContext::View {
                 uris: uris.to_vec(),
                 context_uri: uri.clone(),
             },

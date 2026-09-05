@@ -13,6 +13,7 @@ pub mod login;
 mod lyrics;
 pub mod player_bar;
 pub mod queue;
+pub mod radio;
 pub mod search;
 pub mod settings;
 pub mod show;
@@ -120,6 +121,14 @@ fn page_tint(app: &mut App) -> Option<Color32> {
             .or_else(|| app.known_album(id))
             .and_then(|album| pick_image(&album.images, 64))
             .map(str::to_string),
+        Page::Radio(id) => app
+            .radio_pages
+            .get(id)
+            .and_then(|page| page.station.get())
+            .map(|station| &station.seed)
+            .or_else(|| app.track_cache.get(id))
+            .and_then(|seed| seed.image(300))
+            .map(str::to_string),
         Page::Artist(id) => app
             .artist_pages
             .get(id)
@@ -195,6 +204,7 @@ fn central(app: &mut App, ui: &mut egui::Ui) {
                                 }
                                 Page::Playlist(id) => collection::playlist(app, ui, &id),
                                 Page::Album(id) => collection::album(app, ui, &id),
+                                Page::Radio(id) => radio::show(app, ui, &id),
                                 Page::Artist(id) => artist::show(app, ui, &id),
                                 Page::Show(id) => show::show(app, ui, &id),
                                 Page::Queue => queue::page(app, ui),

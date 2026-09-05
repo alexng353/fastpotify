@@ -35,7 +35,8 @@ everyday use, and connection details.
   without changing playback, or **Start song radio** to play it immediately.
   Browsing uses the local playback sign-in; it does not activate this device.
 - **Home** with Made for you, Recently played, your top artists and songs, and
-  recommendations.
+  recommendations. Hold Shift while turning the mouse wheel to scroll a
+  shelf sideways.
 - **Artist pages** with popular songs, a filterable discography, and related
   artists. **Album**, **playlist**, and **podcast** pages support playback
   from any row.

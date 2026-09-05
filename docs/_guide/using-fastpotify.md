@@ -23,6 +23,12 @@ computer and show the Queue tab. Browsing radio requires the local playback
 sign-in too, but does not start or transfer playback. If it is not set up,
 complete **Set up playback here**, then retry the radio page.
 
+## Scrolling shelves
+
+Hold **Shift** while turning the mouse wheel to scroll a Home shelf such as
+**Recently played** sideways. Release Shift to scroll the page vertically.
+Trackpad gestures stay on their initial axis to prevent diagonal drift.
+
 ## Recent
 
 The queue panel's second tab combines Spotify's history with tracks played

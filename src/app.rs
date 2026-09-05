@@ -6188,10 +6188,14 @@ impl App {
     }
 
     pub fn frame_ui(&mut self, ui: &mut egui::Ui) {
+        self.frame_ui_at(ui, Instant::now());
+    }
+
+    fn frame_ui_at(&mut self, ui: &mut egui::Ui, now: Instant) {
         let ctx = ui.ctx().clone();
         let ctx = &ctx;
         self.apply_theme(ctx);
-        self.lock_scroll_axis(ctx);
+        self.lock_scroll_axis(ctx, now);
         // Switch to the main window when sign-in is required.
         let needs_sign_in = !(self.is_connected() && self.user.is_some())
             && !matches!(self.auth, AuthStatus::Connecting | AuthStatus::Starting)
@@ -6239,11 +6243,11 @@ impl App {
         }
     }
 
-    /// Locks each scroll gesture to one axis.
+    /// Locks each trackpad gesture to one axis.
     ///
     /// Trackpads report small cross-axis deltas. Choose from the first movement
     /// and hold that axis until the gesture ends.
-    fn lock_scroll_axis(&mut self, ctx: &egui::Context) {
+    fn lock_scroll_axis(&mut self, ctx: &egui::Context, now: Instant) {
         let (raw, from_trackpad, ended) = ctx.input(|input| {
             let mut sum = egui::Vec2::ZERO;
             let mut pointish = false;
@@ -6260,9 +6264,19 @@ impl App {
             }
             (sum, pointish, ended)
         });
-        let now = Instant::now();
         if raw != egui::Vec2::ZERO {
             self.scroll_from_trackpad = from_trackpad;
+        }
+        // egui already converts wheel modifiers (such as Shift) and smooths
+        // that movement across frames. A lock based on raw wheel deltas would
+        // erase the converted axis, or retain an earlier trackpad's direction.
+        if !self.scroll_from_trackpad {
+            self.scroll_lock = None;
+            self.glide = None;
+            self.scroll_history.clear();
+            self.scroll_accum = egui::Vec2::ZERO;
+            self.scroll_last_event = None;
+            return;
         }
         // Linux touchpad point deltas need scaling. Wheel deltas are already
         // scaled, and macOS point deltas need no adjustment.
@@ -6606,6 +6620,9 @@ fn cap_uris(uris: Vec<String>, index: u32) -> (Vec<String>, u32) {
     let end = (start + MAX).min(uris.len());
     (uris[start..end].to_vec(), 0)
 }
+
+#[cfg(test)]
+mod scroll_tests;
 
 #[cfg(test)]
 mod tests {

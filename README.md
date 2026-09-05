@@ -32,7 +32,8 @@ everyday use, and connection details.
 - **Search** across songs, artists, albums, playlists, podcasts, and episodes,
   with a top result and per-type views.
 - **Home** with Made for you, Recently played, your top artists and songs, and
-  recommendations.
+  recommendations. Hold Shift while turning the mouse wheel to scroll a
+  shelf sideways.
 - **Artist pages** with popular songs, a filterable discography, and related
   artists. **Album**, **playlist**, and **podcast** pages support playback
   from any row.

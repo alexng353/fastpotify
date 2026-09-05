@@ -11,6 +11,12 @@ playlist to switch to a custom order. New playlists appear below the pinned
 group. Choose **Sort by recently played** from a playlist's context menu to
 restore the default order.
 
+## Scrolling shelves
+
+Hold **Shift** while turning the mouse wheel to scroll a Home shelf such as
+**Recently played** sideways. Release Shift to scroll the page vertically.
+Trackpad gestures stay on their initial axis to prevent diagonal drift.
+
 ## Recent
 
 The queue panel's second tab combines Spotify's history with tracks played

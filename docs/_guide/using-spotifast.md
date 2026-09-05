@@ -222,6 +222,7 @@ Changing the option while the mini player is open replaces that window while
 playback continues. This setting is available on Windows; it does not change
 Linux panels or the macOS Dock.
 
+<<<<<<< ours
 On Windows, since 0.8.0, the mini player starts on the current desktop if its
 saved title bar is outside every connected monitor’s work area. Positions on
 connected secondary monitors still restore. Reinstalling preserves settings;
@@ -241,6 +242,19 @@ badges beside Search. In narrow windows those badges show only their icons.
 The bar stays above the page. Library, Queue and Lyrics keep their full height.
 Hover to read the device name or available version; click to open the device
 picker or update window.
+=======
+## Song radio
+
+Right-click a song and choose **Go to song radio** to open its station as a
+page. This keeps your music and queue playing as they are. The page shows
+Spotify's current selection; its play button and song rows play that exact
+list. Choose **Refresh radio** to ask for a new selection.
+
+Choose **Start song radio** to start the station immediately on this
+computer and show the Queue tab. Browsing radio requires the local playback
+sign-in too, but does not start or transfer playback. If it is not set up,
+complete **Set up playback here**, then retry the radio page.
+>>>>>>> theirs
 
 ## Recent
 

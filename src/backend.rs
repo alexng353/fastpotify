@@ -515,6 +515,10 @@ pub enum Command {
         selected:
             std::pin::Pin<Box<dyn std::future::Future<Output = Option<rfd::FileHandle>> + Send>>,
     },
+    Radio {
+        id: String,
+        generation: u64,
+    },
     /// Start (or restart) the Web API sign-in in the browser.
     SignIn {
         request: u64,
@@ -681,6 +685,11 @@ pub enum Event {
         id: String,
         request: u64,
         result: Result<Option<crate::playlist_cover::Cover>, String>,
+    },
+    Radio {
+        id: String,
+        generation: u64,
+        result: Result<Box<crate::radio::Station>, String>,
     },
     Auth(AuthStatus),
     Playback(LocalPlayback),
@@ -1681,6 +1690,7 @@ impl Worker {
                 }
                 Command::Lyrics(request) => self.fetch_lyrics(*request),
                 Command::Rootlist => self.fetch_rootlist(),
+                Command::Radio { id, generation } => self.fetch_radio(id, generation),
                 Command::VerifyResume => self.verify_resume(),
                 Command::LoadPlaylistCache { id, generation } => {
                     self.load_playlist_cache(id, generation)
@@ -2719,6 +2729,29 @@ impl Worker {
             result,
         });
         self.start_album_type_lookup();
+    }
+
+    fn fetch_radio(&self, id: String, generation: u64) {
+        let engine = self.engine.clone();
+        let events = self.events.clone();
+        let waker = self.waker.clone();
+        tokio::spawn(async move {
+            let result = match engine {
+                Some(engine) => match tokio::time::timeout(
+                    Duration::from_secs(45), engine.song_radio(&id),
+                ).await {
+                    Ok(result) => result.map_err(|error| format!("{error:#}")),
+                    Err(_) => Err("Spotify took too long to load this radio. Try again.".into()),
+                },
+                None => Err("Set up playback on this computer to browse song radio, then retry. Browsing will not start playback.".into()),
+            };
+            let _ = events.send(Event::Radio {
+                id,
+                generation,
+                result: result.map(Box::new),
+            });
+            waker.wake();
+        });
     }
 
     fn fetch_lyrics(&self, request: LyricsRequest) {

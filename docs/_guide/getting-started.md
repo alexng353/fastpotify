@@ -74,7 +74,9 @@ You can rename it in Settings.
 - **Rows and cards have context menus.** Right-click a song, playlist, album,
   or artist to see actions such as queue, save, add to playlist, and copy link.
   Search's **Top result** card has the menu for the song, artist, album,
-  playlist, or podcast it shows.
+  playlist, or podcast it shows. Search shelves and filtered grids, and Home's
+  playlist shortcuts, Made for you, Recently played, and top artist cards offer
+  the same menus. Your own playlists include **Edit details** and **Delete**.
   If the playlist already contains the song, Fastpotify asks before adding
   another copy.
 - **Spotify links open in Fastpotify.** A `spotify:` link shared from another

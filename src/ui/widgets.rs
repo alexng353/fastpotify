@@ -1585,6 +1585,9 @@ pub fn ellipsized(
 }
 
 pub struct CardResponse {
+    /// Give attached menus an item-based ID: hovering a Play button can shift
+    /// later cards' automatic response IDs.
+    pub response: egui::Response,
     pub clicked: bool,
     pub play: bool,
 }
@@ -1731,6 +1734,7 @@ pub fn card(
     theme::focus_ring(ui, &response);
     CardResponse {
         clicked: response.clicked() && !play,
+        response,
         play,
     }
 }

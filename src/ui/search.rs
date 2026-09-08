@@ -181,7 +181,14 @@ fn all(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
                     Some(playlist.uri.clone()),
                     Page::Playlist(playlist.id.clone()),
                     |ui, app| {
-                        widgets::context_menu_items(ui, app, &playlist.uri, &playlist.name, None);
+                        let owned = app.user_id().is_some_and(|id| playlist.owned_by(id));
+                        widgets::context_menu_items(
+                            ui,
+                            app,
+                            &playlist.uri,
+                            &playlist.name,
+                            owned.then_some(playlist),
+                        );
                     },
                 );
             } else if let Some(show) = results.shows.as_ref().and_then(|page| page.items.first()) {
@@ -398,6 +405,12 @@ fn artist_card(app: &mut App, ui: &mut egui::Ui, artist: &Artist) {
         app.actions
             .push(Action::Open(Page::Artist(artist.id.clone())));
     }
+    egui::Popup::context_menu(&card.response)
+        .id(ui.make_persistent_id(("search-artist-menu", &artist.uri)))
+        .frame(widgets::menu_frame(&app.palette))
+        .show(|ui| {
+            widgets::context_menu_items(ui, app, &artist.uri, &artist.name, None);
+        });
 }
 
 fn shelf_artists(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
@@ -448,6 +461,12 @@ fn album_card(app: &mut App, ui: &mut egui::Ui, album: &crate::api::models::Albu
         app.actions
             .push(Action::Open(Page::Album(album.id.clone())));
     }
+    egui::Popup::context_menu(&card.response)
+        .id(ui.make_persistent_id(("search-album-menu", &album.uri)))
+        .frame(widgets::menu_frame(&app.palette))
+        .show(|ui| {
+            widgets::context_menu_items(ui, app, &album.uri, &album.name, None);
+        });
 }
 
 fn shelf_albums(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
@@ -493,6 +512,19 @@ fn playlist_card(app: &mut App, ui: &mut egui::Ui, playlist: &crate::api::models
         app.actions
             .push(Action::Open(Page::Playlist(playlist.id.clone())));
     }
+    egui::Popup::context_menu(&card.response)
+        .id(ui.make_persistent_id(("search-playlist-menu", &playlist.uri)))
+        .frame(widgets::menu_frame(&app.palette))
+        .show(|ui| {
+            let owned = app.user_id().is_some_and(|id| playlist.owned_by(id));
+            widgets::context_menu_items(
+                ui,
+                app,
+                &playlist.uri,
+                &playlist.name,
+                owned.then_some(playlist),
+            );
+        });
 }
 
 fn shelf_playlists(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
@@ -534,6 +566,12 @@ fn show_card(app: &mut App, ui: &mut egui::Ui, show: &crate::api::models::Show) 
     if card.clicked {
         app.actions.push(Action::Open(Page::Show(show.id.clone())));
     }
+    egui::Popup::context_menu(&card.response)
+        .id(ui.make_persistent_id(("search-show-menu", &show.uri)))
+        .frame(widgets::menu_frame(&app.palette))
+        .show(|ui| {
+            widgets::context_menu_items(ui, app, &show.uri, &show.name, None);
+        });
 }
 
 fn shelf_shows(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {

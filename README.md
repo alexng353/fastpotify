@@ -32,9 +32,9 @@ everyday use, and connection details.
 - **Library.** Browse playlists, Liked Songs, saved albums, followed artists,
   podcasts, and saved episodes. Filter, pin, and reorder sidebar items.
 - **Search** across songs, artists, albums, playlists, podcasts, and episodes,
-  with a top result and per-type views. Right-click the top result for its actions.
+  with a top result and per-type views. Right-click results and cards for their actions.
 - **Home** with Made for you, Recently played, your top artists and songs, and
-  recommendations.
+  recommendations. Right-click playlist shortcuts and shelf cards for their actions.
 - **Artist pages** with popular songs, a filterable discography, and related
   artists. **Album**, **playlist**, and **podcast** pages support playback
   from any row.

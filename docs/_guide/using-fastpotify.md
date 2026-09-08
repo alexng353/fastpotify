@@ -46,6 +46,8 @@ Choose **Start song radio** to start the station immediately on this
 computer and show the Queue tab. Browsing radio requires the local playback
 sign-in too, but does not start or transfer playback. If it is not set up,
 complete **Set up playback here**, then retry the radio page.
+When restoring a radio page at startup, it retries automatically once the
+local playback connection is ready.
 
 ## Recent
 

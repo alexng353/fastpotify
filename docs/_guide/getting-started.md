@@ -73,6 +73,8 @@ You can rename it in Settings.
   searches, and `Q` opens the queue. Ctrl+/ shows the full list.
 - **Rows and cards have context menus.** Right-click a song, playlist, album,
   or artist to see actions such as queue, save, add to playlist, and copy link.
+  Search's **Top result** card has the menu for the song, artist, album,
+  playlist, or podcast it shows.
   If the playlist already contains the song, Fastpotify asks before adding
   another copy.
 - **Spotify links open in Fastpotify.** A `spotify:` link shared from another

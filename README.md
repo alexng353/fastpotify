@@ -32,7 +32,7 @@ everyday use, and connection details.
 - **Library.** Browse playlists, Liked Songs, saved albums, followed artists,
   podcasts, and saved episodes. Filter, pin, and reorder sidebar items.
 - **Search** across songs, artists, albums, playlists, podcasts, and episodes,
-  with a top result and per-type views.
+  with a top result and per-type views. Right-click the top result for its actions.
 - **Home** with Made for you, Recently played, your top artists and songs, and
   recommendations.
 - **Artist pages** with popular songs, a filterable discography, and related

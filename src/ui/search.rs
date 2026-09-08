@@ -116,6 +116,9 @@ fn all(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
                     true,
                     Some(artist.uri.clone()),
                     Page::Artist(artist.id.clone()),
+                    |ui, app| {
+                        widgets::context_menu_items(ui, app, &artist.uri, &artist.name, None);
+                    },
                 );
             } else if let Some(track) = results.tracks.as_ref().and_then(|page| page.items.first())
             {
@@ -133,6 +136,15 @@ fn all(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
                     false,
                     Some(track.uri.clone()),
                     page,
+                    |ui, app| {
+                        widgets::item_menu(
+                            ui,
+                            app,
+                            &PlayableItem::Track(track.clone()),
+                            None,
+                            None,
+                        );
+                    },
                 );
             } else if let Some(album) = results.albums.as_ref().and_then(|page| page.items.first())
             {
@@ -150,6 +162,9 @@ fn all(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
                     false,
                     Some(album.uri.clone()),
                     Page::Album(album.id.clone()),
+                    |ui, app| {
+                        widgets::context_menu_items(ui, app, &album.uri, &album.name, None);
+                    },
                 );
             } else if let Some(playlist) = results
                 .playlists
@@ -165,6 +180,9 @@ fn all(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
                     false,
                     Some(playlist.uri.clone()),
                     Page::Playlist(playlist.id.clone()),
+                    |ui, app| {
+                        widgets::context_menu_items(ui, app, &playlist.uri, &playlist.name, None);
+                    },
                 );
             } else if let Some(show) = results.shows.as_ref().and_then(|page| page.items.first()) {
                 top_result(
@@ -176,6 +194,9 @@ fn all(app: &mut App, ui: &mut egui::Ui, results: &SearchResults) {
                     false,
                     Some(show.uri.clone()),
                     Page::Show(show.id.clone()),
+                    |ui, app| {
+                        widgets::context_menu_items(ui, app, &show.uri, &show.name, None);
+                    },
                 );
             }
         });
@@ -216,6 +237,7 @@ fn top_result(
     round: bool,
     play_uri: Option<String>,
     page: Page,
+    menu: impl FnOnce(&mut egui::Ui, &mut App),
 ) {
     let palette = app.palette;
     let (rect, response) =
@@ -299,13 +321,13 @@ fn top_result(
             }
         }
     }
-    if response
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked()
-        && page != Page::Search
-    {
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    if response.clicked() && page != Page::Search {
         app.actions.push(Action::Open(page));
     }
+    egui::Popup::context_menu(&response)
+        .frame(widgets::menu_frame(&palette))
+        .show(|ui| menu(ui, app));
 }
 
 fn songs(app: &mut App, ui: &mut egui::Ui, results: &SearchResults, limit: usize) {

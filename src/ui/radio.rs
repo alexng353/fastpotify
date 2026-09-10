@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use crate::api::models::Track;
 use crate::app::App;
 use crate::model::{Action, Loadable, Page, RowContext, TableItem};
 use crate::theme::{self, Icon};
@@ -21,6 +22,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
         .station
         .get()
         .map(|station| &station.seed)
+        .or(page.seed.as_ref())
         .or_else(|| app.track_cache.get(id))
         .cloned();
     let title = seed
@@ -31,7 +33,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
         app,
         ui,
         Hero {
-            image: seed.as_ref().and_then(|track| track.image(300)),
+            image: seed.as_ref().and_then(|track| seed_image(ui.ctx(), track)),
             liked: false,
             kind: "Song radio",
             title: &title,
@@ -140,4 +142,26 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
         _ => widgets::loading_row(ui, &palette),
     }
     app.radio_pages.insert(id.to_owned(), page);
+}
+
+fn seed_image<'a>(ctx: &egui::Context, track: &'a Track) -> Option<&'a str> {
+    let preferred = track.image(300)?;
+    let ready = |url: &str| {
+        matches!(
+            egui::Image::new(url).load_for_size(ctx, egui::Vec2::splat(300.0)),
+            Ok(egui::load::TexturePoll::Ready { .. })
+        )
+    };
+    if ready(preferred) {
+        return Some(preferred);
+    }
+    // A row's smaller cover can already be decoded while the hero's is loading.
+    track
+        .album
+        .as_ref()?
+        .images
+        .iter()
+        .map(|image| image.url.as_str())
+        .find(|url| *url != preferred && ready(url))
+        .or(Some(preferred))
 }

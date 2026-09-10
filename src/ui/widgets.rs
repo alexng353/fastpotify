@@ -494,9 +494,9 @@ pub fn item_menu(
     match item {
         PlayableItem::Track(track) => {
             if menu_item(ui, &palette, Some(Icon::Radio), "Go to song radio")
-                && let Some(id) = util::uri_id(&uri)
+                && util::uri_id(&uri).is_some()
             {
-                app.actions.push(Action::Open(Page::Radio(id.to_owned())));
+                app.actions.push(Action::OpenRadio(Box::new(track.clone())));
             }
             if menu_item(ui, &palette, Some(Icon::Play), "Start song radio") {
                 app.actions.push(Action::PlayTrackRadio(uri.clone()));

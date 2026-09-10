@@ -3072,7 +3072,9 @@ impl App {
                 self.album_pages.remove(id);
             }
             Page::Radio(id) => {
-                self.radio_pages.remove(id);
+                if let Some(radio) = self.radio_pages.get_mut(id) {
+                    radio.station = Loadable::NotLoaded;
+                }
                 if self
                     .selection
                     .as_ref()
@@ -5784,6 +5786,7 @@ impl App {
     pub(crate) fn apply(&mut self, action: Action, ctx: &egui::Context) {
         match action {
             Action::Open(page) => self.open(page),
+            Action::OpenRadio(track) => self.open_radio(*track),
             Action::OpenUri(uri) => {
                 if let Some(page) = Page::from_uri(&uri) {
                     self.open(page);

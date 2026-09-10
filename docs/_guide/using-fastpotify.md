@@ -116,7 +116,9 @@ Linux panels or the macOS Dock.
 ## Song radio
 
 Right-click a song and choose **Go to song radio** to open its station as a
-page. This keeps your music and queue playing as they are. The page shows
+page. Its header immediately shows the selected song's name, artist, and
+available album cover while recommendations load. This keeps your music and
+queue playing as they are. The page shows
 Spotify's current selection; its play button and song rows play that exact
 list. Choose **Refresh radio** to ask for a new selection.
 

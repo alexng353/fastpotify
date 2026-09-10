@@ -117,6 +117,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
                 Table {
                     items: &items,
                     row_offset: 0,
+                    pagination: None,
                     context: RowContext::View {
                         uris,
                         context_uri: format!("spotify:station:track:{id}"),

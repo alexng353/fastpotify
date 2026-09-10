@@ -663,6 +663,20 @@ pub fn apply_flags(app: &mut App, page: Option<&str>, show: Option<&str>) {
                 app.settings.theme = crate::settings::ThemeChoice::Light;
                 app.actions.push(Action::SettingsChanged);
             }
+            "finite-playlist" => {
+                if let Some(page) = app.playlist_pages.get_mut("pl1") {
+                    let seed = page.items.items.clone();
+                    page.items.items = (0..50)
+                        .map(|index| seed[index % seed.len()].clone())
+                        .collect();
+                    page.items.total = Some(1000);
+                    page.items.next_offset = Some(50);
+                    page.items.revision += 1;
+                    if let Some(playlist) = page.playlist.get_mut() {
+                        playlist.tracks = Some(crate::api::models::TrackCount { total: 1000 });
+                    }
+                }
+            }
             "focus" => app.settings.sidebar_visible = false,
             // A cold start: no device is playing anything, and all the app
             // has is the song the last session ended on.
@@ -3707,6 +3721,7 @@ mod tests {
                             app,
                             ui,
                             crate::ui::collection::Table {
+                                pagination: None,
                                 items: if empty { &[] } else { &rows },
                                 row_offset: if mode == "empty" { 0 } else { 100 },
                                 context: crate::model::RowContext::Context {

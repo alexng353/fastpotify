@@ -664,6 +664,8 @@ pub struct Backend {
     playlist_sample_requests: std::sync::Mutex<Vec<(String, u32, u64)>>,
     #[cfg(test)]
     playlist_add_requests: std::sync::Mutex<Vec<ApiRequest>>,
+    #[cfg(test)]
+    player_commands: std::sync::Mutex<Vec<PlayerCommand>>,
 }
 
 impl Backend {
@@ -731,6 +733,8 @@ impl Backend {
             playlist_sample_requests: std::sync::Mutex::new(Vec::new()),
             #[cfg(test)]
             playlist_add_requests: std::sync::Mutex::new(Vec::new()),
+            #[cfg(test)]
+            player_commands: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -821,7 +825,14 @@ impl Backend {
         )
     }
 
+    #[cfg(test)]
+    pub fn take_player_commands(&self) -> Vec<PlayerCommand> {
+        std::mem::take(&mut *self.player_commands.lock().unwrap())
+    }
+
     pub fn player(&self, command: PlayerCommand) {
+        #[cfg(test)]
+        self.player_commands.lock().unwrap().push(command.clone());
         self.send(Command::Player(command));
     }
 

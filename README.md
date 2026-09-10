@@ -75,8 +75,9 @@ everyday use, and connection details.
   anything can be added to it from a row menu. **Add to queue** places songs
   after those already queued and before the context continues.
 - **Resumes the last session.** On startup, the last song is paused where it
-  stopped. Play resumes it, and the other playback controls work before it
-  starts.
+  stopped. Once local playback connects, it preloads the song through the
+  normal audio cache without starting playback. Play resumes it, and the
+  other playback controls work before it starts.
 - **Album-art colour.** Pages and the player bar take a tint from the cover
   of what you are looking at or listening to. Turn it off in Settings.
 - **Light and dark**, or follow the system.

@@ -251,6 +251,8 @@ pub enum PlayerCommand {
     Shuffle(bool),
     Repeat(RepeatMode),
     Load(LoadSpec),
+    /// Warm the ordinary audio cache without activating Connect or playing.
+    Preload(String),
     Activate,
 }
 
@@ -546,6 +548,26 @@ impl Engine {
                     spirc.repeat_track(true)?;
                 }
             },
+            PlayerCommand::Preload(uri) => {
+                // A transfer or user command may have started playback since
+                // startup requested this. Keep its next-track preload intact.
+                if self
+                    .state
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .playback
+                    == Playback::Stopped
+                {
+                    let track = librespot_core::SpotifyUri::from_uri(&uri)?;
+                    if matches!(
+                        track,
+                        librespot_core::SpotifyUri::Track { .. }
+                            | librespot_core::SpotifyUri::Episode { .. }
+                    ) {
+                        self.player.preload(track);
+                    }
+                }
+            }
             PlayerCommand::Activate => spirc.activate()?,
             PlayerCommand::Load(spec) => {
                 let playing_track = spec
@@ -1180,6 +1202,25 @@ mod tests {
         assert!(!command_interrupts_audio(
             &playing,
             &PlayerCommand::Seek(10)
+        ));
+    }
+
+    #[test]
+    fn preloading_does_not_change_playback_or_interrupt_audio() {
+        let mut state = LocalState::default();
+        assert!(!apply_event(
+            &mut state,
+            PlayerEvent::Preloading { track_id: uri() }
+        ));
+        assert_eq!(state.playback, Playback::Stopped);
+        assert!(state.track.is_none());
+        let playing = LocalState {
+            playback: Playback::Playing,
+            ..LocalState::default()
+        };
+        assert!(!command_interrupts_audio(
+            &playing,
+            &PlayerCommand::Preload(uri().to_uri().unwrap())
         ));
     }
 

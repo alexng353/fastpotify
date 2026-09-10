@@ -137,6 +137,13 @@ Connect, or replace the current queue. These requests do not use the shared
 Web API quota. Playback begins only when a play control or **Start song
 radio** is used.
 
+On startup, once the local playback session connects, the remembered song
+is preloaded through librespot and the existing audio cache. It stays paused
+at its saved position. This uses the playback grant and Spotify audio
+requests, without activating this Connect device or replacing its queue.
+A pending Play request takes priority. Preloading still needs a working
+playback session; failed preloads leave normal Play available to try again.
+
 Playback runs on a separate runtime. Librespot maintains the Spotify Connect
 session, exposes this computer as a device, receives transfers, and reports
 playback state. If the session drops, it reconnects with the stored credential.

@@ -385,9 +385,7 @@ impl<T> PagedList<T> {
     }
 
     pub fn absorb(&mut self, offset: u32, page: Page_<T>) {
-        let window = self.window_request.take().is_some()
-            || offset < self.base_offset
-            || offset > self.base_offset.saturating_add(self.items.len() as u32);
+        let window = self.window_request.take().is_some();
         let next_offset = page.next_offset();
         if window {
             if self.total.is_some_and(|total| total != page.total) {
@@ -443,14 +441,16 @@ impl<T> PagedList<T> {
 
     /// Adopt a disk prefix without replacing a distant viewport or its request.
     pub fn adopt_cached_prefix(&mut self, items: Vec<T>, total: u32, next_offset: Option<u32>) {
-        if (self.base_offset == 0 && self.window_request.is_none())
-            || self
-                .window_request
-                .is_some_and(|offset| offset < items.len() as u32)
-        {
+        if self.base_offset == 0 && self.window_request.is_none() {
             self.restore_cached(items, total, next_offset);
         } else {
-            self.windows.insert(0, items);
+            if self.base_offset == 0 {
+                self.items = items;
+                self.next_offset = next_offset;
+                self.loaded_once = true;
+            } else {
+                self.windows.insert(0, items);
+            }
             self.total = Some(total);
             self.revision = self.revision.wrapping_add(1);
         }
@@ -1071,23 +1071,25 @@ mod finite_scroll_tests {
     }
 
     #[test]
-    fn late_cache_can_satisfy_an_adjacent_request() {
+    fn late_cache_preserves_an_adjacent_request_and_its_cached_tail() {
         let mut list = PagedList::default();
         list.absorb(0, page(0, 50, 1000));
         list.window_at(60, 50);
         list.adopt_cached_prefix((0..500).collect(), 1000, Some(500));
-        assert!(!list.loading);
-        assert_eq!(list.window_request, None);
+        assert!(list.loading);
+        list.absorb(50, page(50, 50, 1000));
+        assert_eq!(list.items.len(), 500);
         assert_eq!(list.items[60], 60);
     }
 
     #[test]
-    fn a_non_contiguous_response_never_splices_server_positions() {
+    fn catalog_pages_keep_rows_when_nulls_shorten_a_page() {
         let mut list = PagedList::default();
-        list.absorb(0, page(0, 50, 1000));
-        list.absorb(700, page(700, 50, 1000));
-        assert_eq!(list.base_offset, 700);
-        assert_eq!(list.items[20], 720);
+        list.absorb(0, page(0, 49, 100));
+        list.absorb(50, page(50, 50, 100));
+        assert_eq!(list.base_offset, 0);
+        assert_eq!(list.items.len(), 99);
+        assert_eq!(list.items[0], 0);
     }
 
     #[test]

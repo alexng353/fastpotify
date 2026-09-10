@@ -3948,7 +3948,8 @@ impl App {
                     match result {
                         _ if page
                             .cache_restored_through
-                            .is_some_and(|cached| offset < cached) =>
+                            .is_some_and(|cached| offset < cached)
+                            && page.items.window_request != Some(offset) =>
                         {
                             // The initial request was already in flight when
                             // a longer cached prefix was restored.
@@ -11122,6 +11123,44 @@ mod tests {
                 .total,
             1
         );
+    }
+
+    #[test]
+    fn an_overlapping_window_can_extend_a_restored_partial_prefix() {
+        let mut app = headless_app();
+        app.backend.set_offline(true);
+        let mut items = PagedList::default();
+        items.restore_cached(
+            vec![cached_playlist_row("spotify:track:cached"); 499],
+            1000,
+            Some(499),
+        );
+        app.playlist_pages.insert(
+            "overlap".into(),
+            PlaylistPage {
+                items,
+                cache_restored_through: Some(499),
+                tail_checked: true,
+                ..Default::default()
+            },
+        );
+        app.load_window(Page::Playlist("overlap".into()), 499);
+        app.handle_api(ApiResponse::PlaylistItems {
+            id: "overlap".into(),
+            offset: 450,
+            generation: 0,
+            result: Ok(crate::api::models::Page {
+                items: vec![cached_playlist_row("spotify:track:fresh"); 50],
+                total: 1000,
+                offset: 450,
+                limit: 50,
+                next: Some("next".into()),
+            }),
+        });
+        let items = &app.playlist_pages["overlap"].items;
+        assert!(!items.loading);
+        assert_eq!(items.items.len(), 500);
+        assert_eq!(items.next_offset, Some(500));
     }
 
     #[test]

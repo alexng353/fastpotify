@@ -156,8 +156,8 @@ mod tests {
         output
     }
 
-    fn assert_header(output: &egui::FullOutput) {
-        for label in ["Seed song Radio", "Seed artist"] {
+    fn assert_header(output: &egui::FullOutput, title: &str) {
+        for label in [title, "Seed artist"] {
             assert!(
                 output
                     .shapes
@@ -205,27 +205,68 @@ mod tests {
         browse_from_menu(&mut app, &ctx, seed_track());
         app.track_cache.clear();
         assert!(matches!(app.radio_pages["seed"].station, Loadable::Loading));
-        assert_header(&radio_frame(&mut app, &ctx));
+        assert_header(&radio_frame(&mut app, &ctx), "Seed song Radio");
         let generation = app.radio_pages["seed"].generation;
         app.receive_radio("seed".into(), generation, Err("Still connecting".into()));
-        assert_header(&radio_frame(&mut app, &ctx));
+        assert_header(&radio_frame(&mut app, &ctx), "Seed song Radio");
         app.reload(Page::Radio("seed".into()));
-        assert_header(&radio_frame(&mut app, &ctx));
+        assert_header(&radio_frame(&mut app, &ctx), "Seed song Radio");
         let generation = app.radio_pages["seed"].generation;
         app.receive_radio(
             "seed".into(),
             generation,
             Ok(crate::radio::Station {
-                seed: seed_track(),
+                seed: Track {
+                    name: "Updated song".into(),
+                    ..seed_track()
+                },
                 tracks: vec![],
             }),
         );
         app.track_cache.clear();
         app.reload(Page::Radio("seed".into()));
-        assert_header(&radio_frame(&mut app, &ctx));
+        assert_header(&radio_frame(&mut app, &ctx), "Updated song Radio");
         assert!(app.optimistic_playing.is_none());
         assert!(app.queued_play.is_none());
         assert!(matches!(app.queue, Loadable::NotLoaded));
+    }
+
+    #[test]
+    fn radio_header_requests_only_the_preferred_cover_when_nothing_is_cached() {
+        use egui::load::{BytesLoadResult, BytesLoader, BytesPoll};
+        use std::sync::{Arc, Mutex};
+
+        struct PendingArtwork(Arc<Mutex<Vec<String>>>);
+        impl BytesLoader for PendingArtwork {
+            fn id(&self) -> &str {
+                "radio-test::PendingArtwork"
+            }
+            fn load(&self, _: &egui::Context, uri: &str) -> BytesLoadResult {
+                if !matches!(uri, "bytes://small.svg" | "bytes://large.svg") {
+                    return Err(egui::load::LoadError::NotSupported);
+                }
+                self.0.lock().unwrap().push(uri.to_owned());
+                Ok(BytesPoll::Pending { size: None })
+            }
+            fn forget(&self, _: &str) {}
+            fn forget_all(&self) {}
+            fn byte_size(&self) -> usize {
+                0
+            }
+        }
+
+        let mut app = app();
+        let ctx = egui::Context::default();
+        crate::theme::install(&ctx);
+        egui_extras::install_image_loaders(&ctx);
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        ctx.add_bytes_loader(Arc::new(PendingArtwork(Arc::clone(&requests))));
+        browse_from_menu(&mut app, &ctx, seed_track());
+        radio_frame(&mut app, &ctx);
+        let mut requested = requests.lock().unwrap().clone();
+        requested.sort();
+        requested.dedup();
+        assert_eq!(requested, ["bytes://large.svg"]);
     }
 
     #[test]
@@ -267,6 +308,7 @@ mod tests {
         );
         ctx.include_bytes("bytes://large.svg", SVG);
         let large = texture(&ctx, "bytes://large.svg");
+        assert_ne!(small, large);
         let output = radio_frame(&mut app, &ctx);
         assert!(
             output

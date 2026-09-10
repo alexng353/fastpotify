@@ -493,9 +493,7 @@ pub fn item_menu(
     menu_separator(ui, &palette);
     match item {
         PlayableItem::Track(track) => {
-            if menu_item(ui, &palette, Some(Icon::Radio), "Go to song radio")
-                && util::uri_id(&uri).is_some()
-            {
+            if menu_item(ui, &palette, Some(Icon::Radio), "Go to song radio") {
                 app.actions.push(Action::OpenRadio(Box::new(track.clone())));
             }
             if menu_item(ui, &palette, Some(Icon::Play), "Start song radio") {

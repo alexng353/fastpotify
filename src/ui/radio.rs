@@ -1,5 +1,6 @@
 //! A station is browsed independently of the currently playing queue.
 
+use egui::load::BytesLoader as _;
 use std::sync::Arc;
 
 use crate::api::models::Track;
@@ -29,11 +30,14 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
         .as_ref()
         .map(|track| format!("{} Radio", track.name))
         .unwrap_or_else(|| "Song radio".into());
+    let image = seed
+        .as_ref()
+        .and_then(|track| seed_image(ui.ctx(), app.backend.art(), track));
     collection::hero(
         app,
         ui,
         Hero {
-            image: seed.as_ref().and_then(|track| seed_image(ui.ctx(), track)),
+            image,
             liked: false,
             kind: "Song radio",
             title: &title,
@@ -144,7 +148,11 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
     app.radio_pages.insert(id.to_owned(), page);
 }
 
-fn seed_image<'a>(ctx: &egui::Context, track: &'a Track) -> Option<&'a str> {
+fn seed_image<'a>(
+    ctx: &egui::Context,
+    art: &crate::images::ArtLoader,
+    track: &'a Track,
+) -> Option<&'a str> {
     let preferred = track.image(300)?;
     let ready = |url: &str| {
         matches!(
@@ -155,13 +163,17 @@ fn seed_image<'a>(ctx: &egui::Context, track: &'a Track) -> Option<&'a str> {
     if ready(preferred) {
         return Some(preferred);
     }
-    // A row's smaller cover can already be decoded while the hero's is loading.
+    // Reuse held or embedded artwork without fetching unused cover sizes.
     track
         .album
         .as_ref()?
         .images
         .iter()
         .map(|image| image.url.as_str())
-        .find(|url| *url != preferred && ready(url))
+        .find(|url| {
+            *url != preferred
+                && (art.is_ready(url) || ctx.loaders().include.load(ctx, url).is_ok())
+                && ready(url)
+        })
         .or(Some(preferred))
 }

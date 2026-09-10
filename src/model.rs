@@ -251,7 +251,7 @@ pub struct PagedList<T> {
     /// Spotify offset of the first item. Nonzero for a directly opened page.
     pub base_offset: u32,
     pub windows: std::collections::BTreeMap<u32, Vec<T>>,
-    pub window_request: bool,
+    pub window_request: Option<u32>,
     pub total: Option<u32>,
     pub next_offset: Option<u32>,
     pub loading: bool,
@@ -266,7 +266,7 @@ impl<T> Default for PagedList<T> {
             items: Vec::new(),
             base_offset: 0,
             windows: Default::default(),
-            window_request: false,
+            window_request: None,
             total: None,
             next_offset: Some(0),
             loading: false,
@@ -290,24 +290,34 @@ impl<T> PagedList<T> {
         {
             return None;
         }
-        self.save_window();
         let cached = self
             .windows
             .range(..=position)
             .next_back()
             .filter(|(start, items)| position < start.saturating_add(items.len() as u32))
             .map(|(start, _)| *start);
-        self.base_offset = cached.unwrap_or(position / size * size);
-        self.items = cached
-            .and_then(|start| self.windows.remove(&start))
-            .unwrap_or_default();
-        self.loaded_once = cached.is_some();
-        self.next_offset =
-            Some(self.base_offset + self.items.len() as u32).filter(|end| Some(*end) != self.total);
-        self.revision = self.revision.wrapping_add(1);
-        self.window_request = cached.is_none();
-        self.loading = self.window_request;
-        self.window_request.then_some(self.base_offset)
+        if let Some(start) = cached {
+            self.save_window();
+            self.items = self.windows.remove(&start).unwrap();
+            self.base_offset = start;
+            self.loaded_once = true;
+            self.join_windows();
+            self.revision = self.revision.wrapping_add(1);
+            return None;
+        }
+        let offset = position / size * size;
+        let end = self.base_offset.saturating_add(self.items.len() as u32);
+        // Adjacent reads extend the visible window; only a distant jump swaps it.
+        if offset > end || offset.saturating_add(size) < self.base_offset {
+            self.save_window();
+            self.base_offset = offset;
+            self.loaded_once = false;
+            self.next_offset = Some(offset);
+            self.revision = self.revision.wrapping_add(1);
+        }
+        self.window_request = Some(offset);
+        self.loading = true;
+        Some(offset)
     }
 
     fn save_window(&mut self) {
@@ -320,29 +330,42 @@ impl<T> PagedList<T> {
     /// Edits or refreshes invalidate other windows' server positions.
     pub fn clear_windows(&mut self) {
         self.windows.clear();
-        self.window_request = false;
+        self.window_request = None;
     }
 
     fn join_windows(&mut self) {
-        let end = self.base_offset.saturating_add(self.items.len() as u32);
-        self.windows.retain(|start, items| {
-            !(*start >= self.base_offset && start.saturating_add(items.len() as u32) <= end)
-        });
-        if let Some((&start, items)) = self.windows.range(..self.base_offset).next_back()
-            && start.saturating_add(items.len() as u32) == self.base_offset
-        {
-            let mut before = self.windows.remove(&start).unwrap();
-            before.append(&mut self.items);
-            self.items = before;
-            self.base_offset = start;
+        // The incoming page wins overlaps; retain cached rows on either side.
+        loop {
+            let end = self.base_offset.saturating_add(self.items.len() as u32);
+            let adjacent = self
+                .windows
+                .iter()
+                .find(|(start, items)| {
+                    **start <= end && start.saturating_add(items.len() as u32) >= self.base_offset
+                })
+                .map(|(start, _)| *start);
+            let Some(start) = adjacent else {
+                break;
+            };
+            let mut other = self.windows.remove(&start).unwrap();
+            let other_end = start.saturating_add(other.len() as u32);
+            if start < self.base_offset {
+                let tail = if other_end > end {
+                    other.split_off((end - start) as usize)
+                } else {
+                    Vec::new()
+                };
+                other.truncate((self.base_offset - start) as usize);
+                other.append(&mut self.items);
+                other.extend(tail);
+                self.items = other;
+                self.base_offset = start;
+            } else if other_end > end {
+                self.items
+                    .extend(other.into_iter().skip((end - start) as usize));
+            }
         }
-        while let Some(mut after) = self
-            .windows
-            .remove(&(self.base_offset + self.items.len() as u32))
-        {
-            self.items.append(&mut after);
-        }
-        self.next_offset = Some(self.base_offset + self.items.len() as u32)
+        self.next_offset = Some(self.base_offset.saturating_add(self.items.len() as u32))
             .filter(|end| self.total.is_some_and(|total| *end < total));
     }
 
@@ -362,21 +385,34 @@ impl<T> PagedList<T> {
     }
 
     pub fn absorb(&mut self, offset: u32, page: Page_<T>) {
-        let window = std::mem::take(&mut self.window_request);
-        if offset == 0 && !window {
-            self.clear_windows();
-            self.items.clear();
-            self.base_offset = 0;
-        } else if !self.loaded_once {
-            self.items.clear();
-            self.base_offset = offset;
-        }
-        let relative = offset.saturating_sub(self.base_offset) as usize;
-        if relative < self.items.len() {
-            self.items.truncate(relative);
-        }
+        let window = self.window_request.take().is_some()
+            || offset < self.base_offset
+            || offset > self.base_offset.saturating_add(self.items.len() as u32);
         let next_offset = page.next_offset();
-        self.items.extend(page.items);
+        if window {
+            if self.total.is_some_and(|total| total != page.total) {
+                self.clear_windows();
+                self.items.clear();
+            } else {
+                self.save_window();
+            }
+            self.base_offset = offset;
+            self.items = page.items;
+        } else {
+            if offset == 0 {
+                self.clear_windows();
+                self.items.clear();
+                self.base_offset = 0;
+            } else if !self.loaded_once {
+                self.items.clear();
+                self.base_offset = offset;
+            }
+            let relative = offset.saturating_sub(self.base_offset) as usize;
+            if relative < self.items.len() {
+                self.items.truncate(relative);
+            }
+            self.items.extend(page.items);
+        }
         self.total = Some(page.total);
         self.next_offset = next_offset;
         if window || !self.windows.is_empty() {
@@ -401,6 +437,21 @@ impl<T> PagedList<T> {
             let item = self.items.remove(from);
             let insert_at = if to > from { to - 1 } else { to };
             self.items.insert(insert_at.min(self.items.len()), item);
+            self.revision = self.revision.wrapping_add(1);
+        }
+    }
+
+    /// Adopt a disk prefix without replacing a distant viewport or its request.
+    pub fn adopt_cached_prefix(&mut self, items: Vec<T>, total: u32, next_offset: Option<u32>) {
+        if (self.base_offset == 0 && self.window_request.is_none())
+            || self
+                .window_request
+                .is_some_and(|offset| offset < items.len() as u32)
+        {
+            self.restore_cached(items, total, next_offset);
+        } else {
+            self.windows.insert(0, items);
+            self.total = Some(total);
             self.revision = self.revision.wrapping_add(1);
         }
     }
@@ -1009,6 +1060,26 @@ mod finite_scroll_tests {
     }
 
     #[test]
+    fn late_cache_can_satisfy_an_adjacent_request() {
+        let mut list = PagedList::default();
+        list.absorb(0, page(0, 50, 1000));
+        list.window_at(60, 50);
+        list.adopt_cached_prefix((0..500).collect(), 1000, Some(500));
+        assert!(!list.loading);
+        assert_eq!(list.window_request, None);
+        assert_eq!(list.items[60], 60);
+    }
+
+    #[test]
+    fn a_non_contiguous_response_never_splices_server_positions() {
+        let mut list = PagedList::default();
+        list.absorb(0, page(0, 50, 1000));
+        list.absorb(700, page(700, 50, 1000));
+        assert_eq!(list.base_offset, 700);
+        assert_eq!(list.items[20], 720);
+    }
+
+    #[test]
     fn distant_windows_keep_the_total_and_return_without_a_request() {
         let mut list = PagedList::default();
         list.absorb(0, page(0, 50, 1000));
@@ -1050,6 +1121,30 @@ mod finite_scroll_tests {
             list.windows.is_empty(),
             "superseded prefix must not stay cached"
         );
+    }
+
+    #[test]
+    fn filling_a_partial_window_keeps_existing_rows_visible() {
+        let mut list = PagedList::default();
+        list.absorb(0, page(0, 49, 1000));
+        assert_eq!(list.window_at(49, 50), Some(0));
+        assert_eq!(list.items, (0..49).collect::<Vec<_>>());
+        list.absorb(0, page(0, 50, 1000));
+        assert_eq!(list.items, (0..50).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn overlapping_windows_keep_server_positions_after_an_edit() {
+        let mut list = PagedList::default();
+        list.absorb(701, page(701, 50, 1000));
+        assert_eq!(list.window_at(700, 50), Some(700));
+        assert_eq!(
+            list.items[0], 701,
+            "loaded songs stay visible during the request"
+        );
+        list.absorb(700, page(700, 50, 1000));
+        assert_eq!(list.base_offset, 700);
+        assert_eq!(list.items, (700..751).collect::<Vec<_>>());
     }
 
     #[test]

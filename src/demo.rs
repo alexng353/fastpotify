@@ -666,9 +666,7 @@ pub fn apply_flags(app: &mut App, page: Option<&str>, show: Option<&str>) {
             "finite-playlist" => {
                 if let Some(page) = app.playlist_pages.get_mut("pl1") {
                     let seed = page.items.items.clone();
-                    page.items.items = (0..50)
-                        .map(|index| seed[index % seed.len()].clone())
-                        .collect();
+                    page.items.items = seed.iter().cycle().take(50).cloned().collect();
                     page.items.total = Some(1000);
                     page.items.next_offset = Some(50);
                     page.items.revision += 1;

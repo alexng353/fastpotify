@@ -591,6 +591,7 @@ pub fn table(app: &mut App, ui: &mut egui::Ui, table: Table<'_>) {
         .iter()
         .filter_map(|row| item_index(*row))
         .filter_map(|index| table.items.get(index))
+        .filter(|(item, _, _)| !item.uri().is_empty())
         .map(|(item, _, _)| item.clone())
         .collect();
     let mut pick = None;
@@ -601,22 +602,25 @@ pub fn table(app: &mut App, ui: &mut egui::Ui, table: Table<'_>) {
                 (table.row_offset as usize..table.row_offset as usize + page.loaded_count)
                     .contains(&row)
             });
-            if !unavailable && missing.is_none() {
+            let first_missing = missing.is_none();
+            if !unavailable && first_missing {
                 missing = Some(row as u32);
             }
-            let (rect, _) =
-                ui.allocate_exact_size(vec2(ui.available_width(), row_height), Sense::hover());
-            ui.painter().text(
-                rect.left_center() + vec2(12.0, 0.0),
-                egui::Align2::LEFT_CENTER,
+            if placeholder_row(
+                ui,
+                &palette,
+                row_height,
                 if unavailable {
                     "Unavailable"
+                } else if table.loading {
+                    "Loading…"
                 } else {
                     table.error.unwrap_or("Loading…")
                 },
-                theme::regular(13.0),
-                palette.secondary,
-            );
+                !unavailable && first_missing && table.error.is_some() && !table.loading,
+            ) {
+                app.actions.push(Action::LoadMore(table.page.clone()));
+            }
             return;
         };
         let local_index = table
@@ -626,15 +630,7 @@ pub fn table(app: &mut App, ui: &mut egui::Ui, table: Table<'_>) {
         let actual_index = absolute_row_index(table.row_offset, local_index);
         let (item, added_at, added_by) = &table.items[index];
         if item.uri().is_empty() {
-            let (rect, _) =
-                ui.allocate_exact_size(vec2(ui.available_width(), row_height), Sense::hover());
-            ui.painter().text(
-                rect.left_center() + vec2(12.0, 0.0),
-                egui::Align2::LEFT_CENTER,
-                "Unavailable",
-                theme::regular(13.0),
-                palette.secondary,
-            );
+            placeholder_row(ui, &palette, row_height, "Unavailable", false);
             return;
         }
         // Shift neighboring rows around the current drop slot.
@@ -735,7 +731,7 @@ pub fn table(app: &mut App, ui: &mut egui::Ui, table: Table<'_>) {
         ui.add_space(8.0);
         widgets::error_row(ui, app, error, Some(table.page.clone()));
     }
-    if rows == 0 && !table.loading && table.error.is_none() {
+    if rows == 0 && needle.is_empty() && !table.loading && table.error.is_none() {
         widgets::empty_state(
             ui,
             &palette,
@@ -760,6 +756,41 @@ pub fn table(app: &mut App, ui: &mut egui::Ui, table: Table<'_>) {
     }
 }
 
+fn placeholder_row(
+    ui: &mut egui::Ui,
+    palette: &Palette,
+    height: f32,
+    label: &str,
+    retry: bool,
+) -> bool {
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
+    let width = (rect.width() - if retry { 96.0 } else { 24.0 }).max(1.0);
+    let text = crate::bidi::layout(
+        ui.painter(),
+        label,
+        theme::regular(13.0),
+        palette.secondary,
+        width,
+        1,
+        None,
+    );
+    ui.painter().galley(
+        pos2(rect.left() + 12.0, rect.center().y - text.size().y / 2.0),
+        text,
+        palette.secondary,
+    );
+    retry
+        && ui
+            .put(
+                Rect::from_center_size(
+                    pos2(rect.right() - 40.0, rect.center().y),
+                    vec2(64.0, 28.0),
+                ),
+                egui::Button::new("Retry"),
+            )
+            .clicked()
+}
+
 fn absolute_row_index(row_offset: u32, local_index: usize) -> usize {
     (row_offset as usize).saturating_add(local_index)
 }
@@ -771,6 +802,9 @@ fn view_indices(items: &[TableItem], needle: &str, sort: Option<TableSort>) -> V
         .iter()
         .enumerate()
         .filter(|(_, (item, _, _))| {
+            if item.uri().is_empty() {
+                return false;
+            }
             if needle.is_empty() {
                 return true;
             }
@@ -1522,6 +1556,161 @@ mod tests {
         assert!(app.actions.iter().any(|action| matches!(action,
             Action::LoadWindow { page: Page::Playlist(id), position } if id == "finite" && *position > 650 && *position < 750
         )), "a jump must request the distant rows, not the next sequential page");
+    }
+
+    #[test]
+    fn null_album_slots_are_not_sorted_playback_entries() {
+        let items = vec![
+            (PlayableItem::Track(Track::default()), None, None),
+            (
+                PlayableItem::Track(Track {
+                    uri: "spotify:track:a".into(),
+                    ..Default::default()
+                }),
+                None,
+                None,
+            ),
+        ];
+        assert_eq!(
+            view_indices(
+                &items,
+                "",
+                Some(TableSort {
+                    column: SortColumn::Title,
+                    ascending: true
+                })
+            ),
+            vec![1]
+        );
+    }
+
+    #[test]
+    fn finite_window_errors_offer_retry_without_changing_extent() {
+        fn retry_position(shape: &egui::Shape) -> Option<egui::Pos2> {
+            match shape {
+                egui::Shape::Text(text) if text.galley.text() == "Retry" => {
+                    Some(text.pos + text.galley.rect.center().to_vec2())
+                }
+                egui::Shape::Vec(shapes) => shapes.iter().find_map(retry_position),
+                _ => None,
+            }
+        }
+        let mut app = test_app();
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        let mut draw = |ui: &mut egui::Ui| {
+            egui::ScrollArea::vertical()
+                .show(ui, |ui| {
+                    table(
+                        &mut app,
+                        ui,
+                        Table {
+                            items: &[],
+                            row_offset: 0,
+                            pagination: Some(TablePagination {
+                                total: 1000,
+                                loaded_count: 0,
+                                positions: None,
+                                scroll_to: None,
+                            }),
+                            context: RowContext::Context {
+                                uri: "spotify:playlist:retry".into(),
+                                editable_playlist: None,
+                            },
+                            show_album: false,
+                            show_cover: false,
+                            show_added: false,
+                            show_added_by: false,
+                            page: Page::Playlist("retry".into()),
+                            loading: false,
+                            error: Some("Offline"),
+                            can_load_more: true,
+                            filter: "",
+                            items_revision: 0,
+                        },
+                    )
+                })
+                .content_size
+                .y
+        };
+        let mut height = 0.0;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            height = draw(ui);
+        });
+        let retry = output
+            .shapes
+            .iter()
+            .find_map(|shape| retry_position(&shape.shape));
+        output.textures_delta.clear();
+        let pos = retry.expect("failed finite windows must expose Retry");
+        let mut next_height = 0.0;
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                events: vec![
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: false,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+                ..Default::default()
+            },
+            |ui| {
+                next_height = draw(ui);
+            },
+        );
+        output.textures_delta.clear();
+        assert_eq!(height, next_height);
+        assert!(
+            app.actions.iter().any(
+                |action| matches!(action, Action::LoadMore(Page::Playlist(id)) if id == "retry")
+            )
+        );
+    }
+
+    #[test]
+    fn a_filter_with_no_loaded_matches_keeps_fetching() {
+        let mut app = test_app();
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        let items = make_large_tracks(1);
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            table(
+                &mut app,
+                ui,
+                Table {
+                    items: &items,
+                    row_offset: 0,
+                    pagination: None,
+                    context: RowContext::Context {
+                        uri: "spotify:playlist:filtered".into(),
+                        editable_playlist: None,
+                    },
+                    show_album: false,
+                    show_cover: false,
+                    show_added: false,
+                    show_added_by: false,
+                    page: Page::Playlist("filtered".into()),
+                    loading: false,
+                    error: None,
+                    can_load_more: true,
+                    filter: "unmatched",
+                    items_revision: 0,
+                },
+            )
+        });
+        output.textures_delta.clear();
+        assert!(app.actions.iter().any(
+            |action| matches!(action, Action::LoadMore(Page::Playlist(id)) if id == "filtered")
+        ));
     }
 
     fn make_large_tracks(count: usize) -> Vec<TableItem> {

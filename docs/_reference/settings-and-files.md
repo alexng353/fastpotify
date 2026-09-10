@@ -124,7 +124,7 @@ Large playlist pages also have a **Go to song** control. Entering a song
 number scrolls to that row and loads its 50-item page if needed. Filtering or
 sorting returns to the beginning and loads remaining pages as needed, since
 local search and ordering require the track metadata. A failed window stops
-automatic requests; refresh the page to retry.
+automatic requests and shows a Retry button in the reserved row space.
 
 On `main`, for the release after 0.7.1, Flatpak also preserves the fallback
 state directory used when `XDG_STATE_HOME` is unset. Session state, history,

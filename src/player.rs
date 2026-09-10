@@ -265,6 +265,7 @@ pub type Notify = Arc<dyn Fn(EngineEvent) + Send + Sync>;
 pub struct Engine {
     player: Arc<Player>,
     spirc: Arc<Spirc>,
+    spirc_task: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     session: Session,
     mixer: Arc<dyn Mixer>,
     device_id: String,
@@ -372,7 +373,7 @@ impl Engine {
         let ended_notify = Arc::clone(&notify);
         let ended_state = Arc::clone(&state);
         let ended_interrupted = Arc::clone(&interrupted);
-        tokio::spawn(async move {
+        let spirc_task = tokio::spawn(async move {
             spirc_task.await;
             {
                 let mut current = ended_state.lock().unwrap_or_else(|p| p.into_inner());
@@ -393,6 +394,7 @@ impl Engine {
         Ok(Self {
             player,
             spirc: Arc::new(spirc),
+            spirc_task: tokio::sync::Mutex::new(Some(spirc_task)),
             session,
             mixer,
             device_id,
@@ -490,11 +492,33 @@ impl Engine {
             .map(str::to_string)
     }
 
-    pub fn shutdown(&self) {
+    pub async fn shutdown_and_wait(&self) {
         self.shutting_down
             .store(true, std::sync::atomic::Ordering::SeqCst);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
         let _ = self.spirc.shutdown();
-        self.player.stop();
+        // Stop the command producer before the final drain, so remote commands
+        // and end-of-track transitions cannot start another listen during it.
+        if let Some(mut task) = self.spirc_task.lock().await.take() {
+            match tokio::time::timeout_at(deadline, &mut task).await {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => log::warn!("Spotify Connect shutdown failed: {error}"),
+                Err(_) => {
+                    task.abort();
+                    let _ = task.await;
+                    log::warn!("Spotify Connect shutdown timed out");
+                }
+            }
+        }
+        // Spirc may already have ended because the connection dropped.
+        match tokio::time::timeout_at(deadline, self.player.stop_and_flush()).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => log::warn!("unable to flush Spotify listening history: {error}"),
+            Err(_) => {
+                self.player.stop();
+                log::warn!("Spotify listening history flush timed out");
+            }
+        }
     }
 
     pub fn command(&self, command: PlayerCommand) -> Result<()> {

@@ -1,8 +1,7 @@
 //! Local play history.
 //!
-//! Spotify does not record playback from librespot clients. Fastpotify stores
-//! local plays and merges them with `/me/player/recently-played`, which covers
-//! other devices. A track counts only after enough listening time, so skips do
+//! Fastpotify stores local plays and merges them with Spotify history, including
+//! listens reported by librespot and plays from other devices. A track counts only after enough listening time, so skips do
 //! not fill the history.
 
 use std::collections::HashMap;

@@ -198,13 +198,14 @@ projectm-sys = { git = "https://github.com/crmne/projectm-rs", branch = "respect
 # librespot 0.8.0 plus the small patches Fastpotify needs: queue controls,
 # normalisation-factor reporting for the visualisers, and a distinct event
 # when Spotify refuses an audio key, and a connection deadline that includes
-# socket setup, plus an in-memory credential cache for platform storage.
+# socket setup, plus an in-memory credential cache for platform storage and
+# Spotify listening reports. The reporting backport is proposed upstream.
 # Every librespot crate comes from the
 # fork so one copy exists. Drop patches as upstream takes them.
-librespot-audio = { git = "https://github.com/crmne/librespot", branch = "fastpotify-0.8" }
-librespot-connect = { git = "https://github.com/crmne/librespot", branch = "fastpotify-0.8" }
-librespot-core = { git = "https://github.com/crmne/librespot", branch = "fastpotify-0.8" }
-librespot-metadata = { git = "https://github.com/crmne/librespot", branch = "fastpotify-0.8" }
-librespot-oauth = { git = "https://github.com/crmne/librespot", branch = "fastpotify-0.8" }
-librespot-playback = { git = "https://github.com/crmne/librespot", branch = "fastpotify-0.8" }
-librespot-protocol = { git = "https://github.com/crmne/librespot", branch = "fastpotify-0.8" }
+librespot-audio = { git = "https://github.com/alexng353/librespot", rev = "f5800363c98dd2f714b39d479099c78b3916378f" }
+librespot-connect = { git = "https://github.com/alexng353/librespot", rev = "f5800363c98dd2f714b39d479099c78b3916378f" }
+librespot-core = { git = "https://github.com/alexng353/librespot", rev = "f5800363c98dd2f714b39d479099c78b3916378f" }
+librespot-metadata = { git = "https://github.com/alexng353/librespot", rev = "f5800363c98dd2f714b39d479099c78b3916378f" }
+librespot-oauth = { git = "https://github.com/alexng353/librespot", rev = "f5800363c98dd2f714b39d479099c78b3916378f" }
+librespot-playback = { git = "https://github.com/alexng353/librespot", rev = "f5800363c98dd2f714b39d479099c78b3916378f" }
+librespot-protocol = { git = "https://github.com/alexng353/librespot", rev = "f5800363c98dd2f714b39d479099c78b3916378f" }

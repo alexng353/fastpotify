@@ -116,12 +116,15 @@ Linux panels or the macOS Dock.
 ## Recent
 
 The queue panel's second tab combines Spotify's history with tracks played
-through Fastpotify, which Spotify does not record.
+through Fastpotify. Completed and interrupted listens are also reported to
+Spotify, so they can appear in Spotify's recently played history. Pauses and
+seeks do not add listening time.
 
 A song is added after about 30 seconds, or halfway through a shorter song.
 Paused time and seeking do not count.
 
-The local list is stored in `history.json` and is never uploaded. Settings →
+The local list is stored in `history.json`. This file is never uploaded;
+librespot reports each new listen separately when playback ends. Settings →
 Storage shows its location and has a **Clear history** button.
 
 On Windows, the main window's minimize, maximize, and close buttons share the

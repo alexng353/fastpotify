@@ -144,3 +144,11 @@ Each access-point attempt gives socket setup and the handshake a combined
 five seconds. A stalled TCP connection or HTTP proxy tunnel therefore lets
 librespot retry and move on to another endpoint instead of waiting for the
 operating system's longer connection timeout.
+
+## Listening history
+
+The playback session reports completed and interrupted listens through librespot.
+Reports use the audio delivered to the output, excluding paused time and seek
+jumps. Closing Fastpotify waits up to ten seconds for pending reports. Network
+failures are logged; reports are not persisted for a later launch. This does not
+require the optional personal Web API app, which is used to read recent history.

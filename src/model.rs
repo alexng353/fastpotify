@@ -383,7 +383,7 @@ impl<T> PagedList<T> {
     }
 
     pub fn can_load_more(&self) -> bool {
-        !self.loading && self.next_offset.is_some()
+        !self.loading && (self.window_request.is_some() || self.next_offset.is_some())
     }
 
     pub fn is_complete(&self) -> bool {
@@ -1063,6 +1063,17 @@ mod finite_scroll_tests {
             total,
             next: (offset + count < total).then(|| "next".into()),
         }
+    }
+
+    #[test]
+    fn a_failed_backward_window_can_retry_from_the_end() {
+        let mut list = PagedList::default();
+        list.absorb(950, page(950, 50, 1000));
+        assert_eq!(list.next_offset, None);
+        assert_eq!(list.window_at(920, 50), Some(900));
+        list.fail("Offline".into());
+        assert!(list.can_load_more());
+        assert_eq!(list.window_request, Some(900));
     }
 
     #[test]

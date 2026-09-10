@@ -80,15 +80,7 @@ fn page_tint(app: &mut App) -> Option<Color32> {
             .and_then(|album| pick_image(&album.images, 300))
             .map(str::to_string),
         Page::Radio(id) => app
-            .radio_pages
-            .get(id)
-            .and_then(|page| {
-                page.station
-                    .get()
-                    .map(|station| &station.seed)
-                    .or(page.seed.as_ref())
-            })
-            .or_else(|| app.track_cache.get(id))
+            .radio_seed(id)
             .and_then(|seed| seed.image(300))
             .map(str::to_string),
         Page::Artist(id) => app
@@ -491,6 +483,8 @@ mod tests {
             crate::model::Loadable::Loading
         ));
         assert_eq!(page_tint(&mut app), Some(Color32::from_rgb(100, 150, 200)));
+        drop(app);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

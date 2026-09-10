@@ -83,7 +83,8 @@ impl ArtLoader {
         }
     }
 
-    /// Whether artwork is already held, without starting a download.
+    /// Whether artwork has loaded, without starting a download.
+    /// Bytes may be released after egui creates its texture; eviction forgets both.
     pub fn is_ready(&self, url: &str) -> bool {
         matches!(
             self.inner

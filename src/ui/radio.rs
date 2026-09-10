@@ -3,7 +3,7 @@
 use egui::load::BytesLoader as _;
 use std::sync::Arc;
 
-use crate::api::models::Track;
+use crate::api::models::{Track, pick_image};
 use crate::app::App;
 use crate::model::{Action, Loadable, Page, RowContext, TableItem};
 use crate::theme::{self, Icon};
@@ -14,18 +14,12 @@ use super::{
 };
 
 pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
+    let seed = app.radio_seed(id).cloned();
     let Some(page) = app.radio_pages.remove(id) else {
         app.ensure_loaded(Page::Radio(id.to_owned()));
         return;
     };
     let palette = app.palette;
-    let seed = page
-        .station
-        .get()
-        .map(|station| &station.seed)
-        .or(page.seed.as_ref())
-        .or_else(|| app.track_cache.get(id))
-        .cloned();
     let title = seed
         .as_ref()
         .map(|track| format!("{} Radio", track.name))
@@ -153,7 +147,8 @@ fn seed_image<'a>(
     art: &crate::images::ArtLoader,
     track: &'a Track,
 ) -> Option<&'a str> {
-    let preferred = track.image(300)?;
+    let images = &track.album.as_ref()?.images;
+    let preferred = pick_image(images, 300)?;
     let ready = |url: &str| {
         matches!(
             egui::Image::new(url).load_for_size(ctx, egui::Vec2::splat(300.0)),
@@ -163,11 +158,9 @@ fn seed_image<'a>(
     if ready(preferred) {
         return Some(preferred);
     }
-    // Reuse held or embedded artwork without fetching unused cover sizes.
-    track
-        .album
-        .as_ref()?
-        .images
+    // These are the app's two byte sources: downloaded and embedded artwork.
+    // Check their caches without fetching unused cover sizes.
+    images
         .iter()
         .map(|image| image.url.as_str())
         .find(|url| {

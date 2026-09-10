@@ -3,6 +3,18 @@
 use super::*;
 
 impl App {
+    pub(crate) fn radio_seed(&self, id: &str) -> Option<&Track> {
+        self.radio_pages
+            .get(id)
+            .and_then(|page| {
+                page.station
+                    .get()
+                    .map(|station| &station.seed)
+                    .or(page.seed.as_ref())
+            })
+            .or_else(|| self.track_cache.get(id))
+    }
+
     pub(super) fn open_radio(&mut self, track: Track) {
         let Some(id) = util::uri_id(&track.uri).map(str::to_owned) else {
             return;
@@ -163,7 +175,7 @@ mod tests {
                     .shapes
                     .iter()
                     .any(|shape| text_position(&shape.shape, label).is_some()),
-                "the radio header must show {label} before recommendations arrive"
+                "the radio header must show {label}"
             );
         }
     }
@@ -217,12 +229,14 @@ mod tests {
             generation,
             Ok(crate::radio::Station {
                 seed: Track {
+                    id: Some("seed".into()),
                     name: "Updated song".into(),
                     ..seed_track()
                 },
                 tracks: vec![],
             }),
         );
+        assert_eq!(app.track_cache["seed"].name, "Updated song");
         app.track_cache.clear();
         app.reload(Page::Radio("seed".into()));
         assert_header(&radio_frame(&mut app, &ctx), "Updated song Radio");
@@ -272,51 +286,91 @@ mod tests {
     #[test]
     fn radio_header_uses_available_cover_until_larger_art_arrives() {
         const SVG: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#ff0088"/></svg>"##;
-        let mut app = app();
-        let ctx = egui::Context::default();
-        crate::theme::install(&ctx);
-        egui_extras::install_image_loaders(&ctx);
-        ctx.include_bytes("bytes://small.svg", SVG);
-        browse_from_menu(&mut app, &ctx, seed_track());
-        // Seed the existing fallback too, isolating image selection from navigation.
-        app.track_cache.insert("seed".into(), seed_track());
-        fn texture(ctx: &egui::Context, uri: &str) -> egui::TextureId {
-            match egui::Image::new(uri)
-                .load_for_size(ctx, egui::Vec2::splat(212.0))
-                .unwrap()
-            {
-                egui::load::TexturePoll::Ready { texture } => texture.id,
-                _ => panic!("included artwork must be ready"),
+        for downloaded in [false, true] {
+            let mut app = app();
+            let ctx = egui::Context::default();
+            crate::theme::install(&ctx);
+            egui_extras::install_image_loaders(&ctx);
+            let mut track = seed_track();
+            let small_url = if downloaded {
+                use std::io::{BufRead, BufReader, Write};
+                use std::time::{Duration, Instant};
+                let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+                let url = format!("http://{}/small.svg", listener.local_addr().unwrap());
+                let server = std::thread::spawn(move || {
+                    let (mut stream, _) = listener.accept().unwrap();
+                    for line in BufReader::new(&mut stream).lines() {
+                        if line.unwrap().is_empty() {
+                            break;
+                        }
+                    }
+                    write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: image/svg+xml\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", SVG.len()).unwrap();
+                    stream.write_all(SVG).unwrap();
+                });
+                ctx.add_bytes_loader(std::sync::Arc::new(app.backend.art().clone()));
+                app.backend.art().prefetch(&ctx, &url);
+                let deadline = Instant::now() + Duration::from_secs(5);
+                while !app.backend.art().is_ready(&url) {
+                    assert!(Instant::now() < deadline, "fixture artwork did not load");
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                server.join().unwrap();
+                track.album.as_mut().unwrap().images[0].url = url.clone();
+                url
+            } else {
+                ctx.include_bytes("bytes://small.svg", SVG);
+                "bytes://small.svg".to_owned()
+            };
+            browse_from_menu(&mut app, &ctx, track.clone());
+            // Seed the existing fallback too, isolating image selection from navigation.
+            app.track_cache.insert("seed".into(), track);
+            fn texture(ctx: &egui::Context, uri: &str) -> egui::TextureId {
+                match egui::Image::new(uri)
+                    .load_for_size(ctx, egui::Vec2::splat(212.0))
+                    .unwrap()
+                {
+                    egui::load::TexturePoll::Ready { texture } => texture.id,
+                    _ => panic!("included artwork must be ready"),
+                }
             }
-        }
-        fn painted(shape: &egui::Shape, texture: egui::TextureId) -> bool {
-            match shape {
-                egui::Shape::Mesh(mesh) => mesh.texture_id == texture,
-                egui::Shape::Rect(rect) => rect.fill_texture_id() == texture,
-                egui::Shape::Vec(shapes) => shapes.iter().any(|shape| painted(shape, texture)),
-                _ => false,
+            fn painted(shape: &egui::Shape, texture: egui::TextureId) -> bool {
+                match shape {
+                    egui::Shape::Mesh(mesh) => mesh.texture_id == texture,
+                    egui::Shape::Rect(rect) => rect.fill_texture_id() == texture,
+                    egui::Shape::Vec(shapes) => shapes.iter().any(|shape| painted(shape, texture)),
+                    _ => false,
+                }
             }
+            let small = texture(&ctx, &small_url);
+            let output = radio_frame(&mut app, &ctx);
+            assert!(
+                output
+                    .shapes
+                    .iter()
+                    .any(|shape| painted(&shape.shape, small)),
+                "keep drawing the available cover while the larger image is pending"
+            );
+            // The hero releases source bytes after making a texture. It must still
+            // reuse that texture on the next frame without another request.
+            let output = radio_frame(&mut app, &ctx);
+            assert!(
+                output
+                    .shapes
+                    .iter()
+                    .any(|shape| painted(&shape.shape, small))
+            );
+            ctx.include_bytes("bytes://large.svg", SVG);
+            let large = texture(&ctx, "bytes://large.svg");
+            assert_ne!(small, large);
+            let output = radio_frame(&mut app, &ctx);
+            assert!(
+                output
+                    .shapes
+                    .iter()
+                    .any(|shape| painted(&shape.shape, large)),
+                "upgrade to the preferred cover when it arrives"
+            );
         }
-        let small = texture(&ctx, "bytes://small.svg");
-        let output = radio_frame(&mut app, &ctx);
-        assert!(
-            output
-                .shapes
-                .iter()
-                .any(|shape| painted(&shape.shape, small)),
-            "keep drawing the available cover while the larger image is pending"
-        );
-        ctx.include_bytes("bytes://large.svg", SVG);
-        let large = texture(&ctx, "bytes://large.svg");
-        assert_ne!(small, large);
-        let output = radio_frame(&mut app, &ctx);
-        assert!(
-            output
-                .shapes
-                .iter()
-                .any(|shape| painted(&shape.shape, large)),
-            "upgrade to the preferred cover when it arrives"
-        );
     }
 
     #[test]

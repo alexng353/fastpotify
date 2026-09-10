@@ -599,6 +599,7 @@ pub fn table(app: &mut App, ui: &mut egui::Ui, table: Table<'_>) {
         .collect();
     let mut pick = None;
     let mut missing = None;
+    let mut retry_shown = false;
     widgets::virtual_rows(ui, rows, row_height, |ui, row| {
         let Some(index) = item_index(row) else {
             let unavailable = finite.is_some_and(|page| {
@@ -609,6 +610,12 @@ pub fn table(app: &mut App, ui: &mut egui::Ui, table: Table<'_>) {
             if !unavailable && first_missing {
                 missing = Some(row as u32);
             }
+            let retry = !unavailable
+                && !retry_shown
+                && table.error.is_some()
+                && !table.loading
+                && ui.cursor().top() >= ui.clip_rect().top();
+            retry_shown |= retry;
             if placeholder_row(
                 ui,
                 &palette,
@@ -620,7 +627,7 @@ pub fn table(app: &mut App, ui: &mut egui::Ui, table: Table<'_>) {
                 } else {
                     table.error.unwrap_or("Loading…")
                 },
-                !unavailable && first_missing && table.error.is_some() && !table.loading,
+                retry,
             ) {
                 app.actions.push(Action::LoadMore(table.page.clone()));
             }
@@ -1603,6 +1610,7 @@ mod tests {
         theme::install(&ctx);
         let mut draw = |ui: &mut egui::Ui| {
             egui::ScrollArea::vertical()
+                .vertical_scroll_offset(1200.0)
                 .show(ui, |ui| {
                     table(
                         &mut app,

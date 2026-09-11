@@ -3167,7 +3167,7 @@ dependencies = [
 [[package]]
 name = "librespot-audio"
 version = "0.8.0"
-source = "git+https://github.com/crmne/librespot?branch=fastpotify-0.8#8d3932a64aa7aae84e6920ba7356cf7ce7c0283d"
+source = "git+https://github.com/alexng353/librespot?rev=f5800363c98dd2f714b39d479099c78b3916378f#f5800363c98dd2f714b39d479099c78b3916378f"
 dependencies = [
  "aes 0.8.4",
  "bytes",
@@ -3186,7 +3186,7 @@ dependencies = [
 [[package]]
 name = "librespot-connect"
 version = "0.8.0"
-source = "git+https://github.com/crmne/librespot?branch=fastpotify-0.8#8d3932a64aa7aae84e6920ba7356cf7ce7c0283d"
+source = "git+https://github.com/alexng353/librespot?rev=f5800363c98dd2f714b39d479099c78b3916378f#f5800363c98dd2f714b39d479099c78b3916378f"
 dependencies = [
  "futures-util",
  "librespot-core",
@@ -3205,7 +3205,7 @@ dependencies = [
 [[package]]
 name = "librespot-core"
 version = "0.8.0"
-source = "git+https://github.com/crmne/librespot?branch=fastpotify-0.8#8d3932a64aa7aae84e6920ba7356cf7ce7c0283d"
+source = "git+https://github.com/alexng353/librespot?rev=f5800363c98dd2f714b39d479099c78b3916378f#f5800363c98dd2f714b39d479099c78b3916378f"
 dependencies = [
  "aes 0.8.4",
  "base64",
@@ -3261,7 +3261,7 @@ dependencies = [
 [[package]]
 name = "librespot-metadata"
 version = "0.8.0"
-source = "git+https://github.com/crmne/librespot?branch=fastpotify-0.8#8d3932a64aa7aae84e6920ba7356cf7ce7c0283d"
+source = "git+https://github.com/alexng353/librespot?rev=f5800363c98dd2f714b39d479099c78b3916378f#f5800363c98dd2f714b39d479099c78b3916378f"
 dependencies = [
  "async-trait",
  "bytes",
@@ -3278,7 +3278,7 @@ dependencies = [
 [[package]]
 name = "librespot-oauth"
 version = "0.8.0"
-source = "git+https://github.com/crmne/librespot?branch=fastpotify-0.8#8d3932a64aa7aae84e6920ba7356cf7ce7c0283d"
+source = "git+https://github.com/alexng353/librespot?rev=f5800363c98dd2f714b39d479099c78b3916378f#f5800363c98dd2f714b39d479099c78b3916378f"
 dependencies = [
  "log",
  "oauth2",
@@ -3291,7 +3291,7 @@ dependencies = [
 [[package]]
 name = "librespot-playback"
 version = "0.8.0"
-source = "git+https://github.com/crmne/librespot?branch=fastpotify-0.8#8d3932a64aa7aae84e6920ba7356cf7ce7c0283d"
+source = "git+https://github.com/alexng353/librespot?rev=f5800363c98dd2f714b39d479099c78b3916378f#f5800363c98dd2f714b39d479099c78b3916378f"
 dependencies = [
  "cpal",
  "form_urlencoded",
@@ -3316,7 +3316,7 @@ dependencies = [
 [[package]]
 name = "librespot-protocol"
 version = "0.8.0"
-source = "git+https://github.com/crmne/librespot?branch=fastpotify-0.8#8d3932a64aa7aae84e6920ba7356cf7ce7c0283d"
+source = "git+https://github.com/alexng353/librespot?rev=f5800363c98dd2f714b39d479099c78b3916378f#f5800363c98dd2f714b39d479099c78b3916378f"
 dependencies = [
  "protobuf",
  "protobuf-codegen",

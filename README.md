@@ -44,12 +44,14 @@ everyday use, and connection details.
   with a top result and per-type views. Right-click results and cards for their actions.
 - **Song radio.** Choose **Go to song radio** to browse Spotify's station
   without changing playback, or **Start song radio** to play it immediately.
+  The song's name, artist, and available cover stay visible while radio loads.
   Browsing uses the local playback sign-in; it does not activate this device.
 - **Home** with Made for you, Recently played, your top artists and songs, and
   recommendations. Right-click playlist shortcuts and shelf cards for their actions.
 - **Artist pages** with popular songs, a filterable discography, and related
   artists. **Album**, **playlist**, and **podcast** pages support playback
-  from any row.
+  from any row. Album and playlist scrollbars represent the full track count;
+  dragging to an unloaded section fetches that section directly.
   Discography and related-artist cards also have right-click menus (on `main`,
   after 0.7.1).
   Artist names in the player bar open their pages, including during local
@@ -75,8 +77,9 @@ everyday use, and connection details.
   anything can be added to it from a row menu. **Add to queue** places songs
   after those already queued and before the context continues.
 - **Resumes the last session.** On startup, the last song is paused where it
-  stopped. Play resumes it, and the other playback controls work before it
-  starts.
+  stopped. Once local playback connects, it preloads the song through the
+  normal audio cache without starting playback. Play resumes it, and the
+  other playback controls work before it starts.
 - **Album-art colour.** Pages and the player bar take a tint from the cover
   of what you are looking at or listening to. Turn it off in Settings.
 - **Light and dark**, or follow the system.

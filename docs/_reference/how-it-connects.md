@@ -85,6 +85,11 @@ and dragging never write that order back to Spotify.
   Settings, or request one there at any time. On macOS, **Check for Updates**
   is also in the application menu.
 
+Album and playlist scrollbars can request a distant track page through the
+existing Web API grant, without fetching all preceding tracks. These reads run
+one at a time per list and retain the existing rate-limit handling. Unloaded
+rows are placeholders until their page arrives; scrolling never starts playback.
+
 ## When Spotify pushes back
 
 Each Web API session has separate concurrency and rate limits. A `Retry-After`
@@ -137,6 +142,13 @@ Connect, or replace the current queue. These requests do not use the shared
 Web API quota. Playback begins only when a play control or **Start song
 radio** is used.
 
+On startup, once the local playback session connects, the remembered song
+is preloaded through librespot and the existing audio cache. It stays paused
+at its saved position. This uses the playback grant and Spotify audio
+requests, without activating this Connect device or replacing its queue.
+A pending Play request takes priority. Preloading still needs a working
+playback session; failed preloads leave normal Play available to try again.
+
 Playback runs on a separate runtime. Librespot maintains the Spotify Connect
 session, exposes this computer as a device, receives transfers, and reports
 playback state. If the session drops, it reconnects with the stored credential.
@@ -150,3 +162,11 @@ Each access-point attempt gives socket setup and the handshake a combined
 five seconds. A stalled TCP connection or HTTP proxy tunnel therefore lets
 librespot retry and move on to another endpoint instead of waiting for the
 operating system's longer connection timeout.
+
+## Listening history
+
+The playback session reports completed and interrupted listens through librespot.
+Reports use the audio delivered to the output, excluding paused time and seek
+jumps. Closing Fastpotify waits up to ten seconds for pending reports. Network
+failures are logged; reports are not persisted for a later launch. This does not
+require the optional personal Web API app, which is used to read recent history.

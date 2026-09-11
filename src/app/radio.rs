@@ -3,6 +3,26 @@
 use super::*;
 
 impl App {
+    pub(crate) fn radio_seed(&self, id: &str) -> Option<&Track> {
+        self.radio_pages
+            .get(id)
+            .and_then(|page| {
+                page.station
+                    .get()
+                    .map(|station| &station.seed)
+                    .or(page.seed.as_ref())
+            })
+            .or_else(|| self.track_cache.get(id))
+    }
+
+    pub(super) fn open_radio(&mut self, track: Track) {
+        let Some(id) = util::uri_id(&track.uri).map(str::to_owned) else {
+            return;
+        };
+        self.radio_pages.entry(id.clone()).or_default().seed = Some(track);
+        self.open(Page::Radio(id));
+    }
+
     pub(super) fn load_radio(&mut self, id: &str) {
         if self
             .radio_pages
@@ -13,6 +33,9 @@ impl App {
         }
         self.load_generation += 1;
         let page = self.radio_pages.entry(id.to_owned()).or_default();
+        if page.seed.is_none() {
+            page.seed = self.track_cache.get(id).cloned();
+        }
         page.generation = self.load_generation;
         page.station = Loadable::Loading;
         self.backend.send(Command::Radio {
@@ -36,6 +59,7 @@ impl App {
         };
         match result {
             Ok(station) => {
+                page.seed = Some(station.seed.clone());
                 let tracks = std::iter::once(&station.seed)
                     .chain(&station.tracks)
                     .cloned()
@@ -82,6 +106,271 @@ mod tests {
         };
         app.local_ready = true;
         app
+    }
+
+    fn text_position(shape: &egui::Shape, label: &str) -> Option<egui::Pos2> {
+        match shape {
+            egui::Shape::Text(text) if text.galley.job.text == label => {
+                Some(text.pos + text.galley.size() / 2.0)
+            }
+            egui::Shape::Vec(shapes) => shapes.iter().find_map(|shape| text_position(shape, label)),
+            _ => None,
+        }
+    }
+
+    fn browse_from_menu(app: &mut App, ctx: &egui::Context, track: Track) {
+        let item = PlayableItem::Track(track);
+        let mut draw = |events| {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    events,
+                    ..Default::default()
+                },
+                |ui| crate::ui::widgets::item_menu(ui, app, &item, None, None),
+            );
+            output.textures_delta.clear();
+            output
+        };
+        let pos = draw(vec![])
+            .shapes
+            .iter()
+            .find_map(|shape| text_position(&shape.shape, "Go to song radio"))
+            .expect("the browse action is visible");
+        for pressed in [true, false] {
+            draw(vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ]);
+        }
+        app.apply_actions(ctx);
+        assert_eq!(app.page(), &Page::Radio("seed".into()));
+    }
+
+    fn radio_frame(app: &mut App, ctx: &egui::Context) -> egui::FullOutput {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1240.0, 800.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                crate::ui::radio::show(app, ui, "seed");
+            },
+        );
+        output.textures_delta.clear();
+        output
+    }
+
+    fn assert_header(output: &egui::FullOutput, title: &str) {
+        for label in [title, "Seed artist"] {
+            assert!(
+                output
+                    .shapes
+                    .iter()
+                    .any(|shape| text_position(&shape.shape, label).is_some()),
+                "the radio header must show {label}"
+            );
+        }
+    }
+
+    fn seed_track() -> Track {
+        Track {
+            // The menu already accepts tracks identified by URI alone.
+            uri: "spotify:track:seed".into(),
+            name: "Seed song".into(),
+            artists: vec![crate::api::models::ArtistRef {
+                name: "Seed artist".into(),
+                ..Default::default()
+            }],
+            album: Some(crate::api::models::Album {
+                images: vec![
+                    crate::api::models::Image {
+                        url: "bytes://small.svg".into(),
+                        width: Some(64),
+                        height: Some(64),
+                    },
+                    crate::api::models::Image {
+                        url: "bytes://large.svg".into(),
+                        width: Some(300),
+                        height: Some(300),
+                    },
+                ],
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn radio_header_survives_loading_error_retry_and_cache_eviction() {
+        let mut app = app();
+        let ctx = egui::Context::default();
+        crate::theme::install(&ctx);
+        assert!(app.track_cache.is_empty());
+        browse_from_menu(&mut app, &ctx, seed_track());
+        app.track_cache.clear();
+        assert!(matches!(app.radio_pages["seed"].station, Loadable::Loading));
+        assert_header(&radio_frame(&mut app, &ctx), "Seed song Radio");
+        let generation = app.radio_pages["seed"].generation;
+        app.receive_radio("seed".into(), generation, Err("Still connecting".into()));
+        assert_header(&radio_frame(&mut app, &ctx), "Seed song Radio");
+        app.reload(Page::Radio("seed".into()));
+        assert_header(&radio_frame(&mut app, &ctx), "Seed song Radio");
+        let generation = app.radio_pages["seed"].generation;
+        app.receive_radio(
+            "seed".into(),
+            generation,
+            Ok(crate::radio::Station {
+                seed: Track {
+                    id: Some("seed".into()),
+                    name: "Updated song".into(),
+                    ..seed_track()
+                },
+                tracks: vec![],
+            }),
+        );
+        assert_eq!(app.track_cache["seed"].name, "Updated song");
+        app.track_cache.clear();
+        app.reload(Page::Radio("seed".into()));
+        assert_header(&radio_frame(&mut app, &ctx), "Updated song Radio");
+        assert!(app.optimistic_playing.is_none());
+        assert!(app.queued_play.is_none());
+        assert!(matches!(app.queue, Loadable::NotLoaded));
+    }
+
+    #[test]
+    fn radio_header_requests_only_the_preferred_cover_when_nothing_is_cached() {
+        use egui::load::{BytesLoadResult, BytesLoader, BytesPoll};
+        use std::sync::{Arc, Mutex};
+
+        struct PendingArtwork(Arc<Mutex<Vec<String>>>);
+        impl BytesLoader for PendingArtwork {
+            fn id(&self) -> &str {
+                "radio-test::PendingArtwork"
+            }
+            fn load(&self, _: &egui::Context, uri: &str) -> BytesLoadResult {
+                if !matches!(uri, "bytes://small.svg" | "bytes://large.svg") {
+                    return Err(egui::load::LoadError::NotSupported);
+                }
+                self.0.lock().unwrap().push(uri.to_owned());
+                Ok(BytesPoll::Pending { size: None })
+            }
+            fn forget(&self, _: &str) {}
+            fn forget_all(&self) {}
+            fn byte_size(&self) -> usize {
+                0
+            }
+        }
+
+        let mut app = app();
+        let ctx = egui::Context::default();
+        crate::theme::install(&ctx);
+        egui_extras::install_image_loaders(&ctx);
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        ctx.add_bytes_loader(Arc::new(PendingArtwork(Arc::clone(&requests))));
+        browse_from_menu(&mut app, &ctx, seed_track());
+        radio_frame(&mut app, &ctx);
+        let mut requested = requests.lock().unwrap().clone();
+        requested.sort();
+        requested.dedup();
+        assert_eq!(requested, ["bytes://large.svg"]);
+    }
+
+    #[test]
+    fn radio_header_uses_available_cover_until_larger_art_arrives() {
+        const SVG: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#ff0088"/></svg>"##;
+        for downloaded in [false, true] {
+            let mut app = app();
+            let ctx = egui::Context::default();
+            crate::theme::install(&ctx);
+            egui_extras::install_image_loaders(&ctx);
+            let mut track = seed_track();
+            let small_url = if downloaded {
+                use std::io::{BufRead, BufReader, Write};
+                use std::time::{Duration, Instant};
+                let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+                let url = format!("http://{}/small.svg", listener.local_addr().unwrap());
+                let server = std::thread::spawn(move || {
+                    let (mut stream, _) = listener.accept().unwrap();
+                    for line in BufReader::new(&mut stream).lines() {
+                        if line.unwrap().is_empty() {
+                            break;
+                        }
+                    }
+                    write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: image/svg+xml\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", SVG.len()).unwrap();
+                    stream.write_all(SVG).unwrap();
+                });
+                ctx.add_bytes_loader(std::sync::Arc::new(app.backend.art().clone()));
+                app.backend.art().prefetch(&ctx, &url);
+                let deadline = Instant::now() + Duration::from_secs(5);
+                while !app.backend.art().is_ready(&url) {
+                    assert!(Instant::now() < deadline, "fixture artwork did not load");
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                server.join().unwrap();
+                track.album.as_mut().unwrap().images[0].url = url.clone();
+                url
+            } else {
+                ctx.include_bytes("bytes://small.svg", SVG);
+                "bytes://small.svg".to_owned()
+            };
+            browse_from_menu(&mut app, &ctx, track.clone());
+            // Seed the existing fallback too, isolating image selection from navigation.
+            app.track_cache.insert("seed".into(), track);
+            fn texture(ctx: &egui::Context, uri: &str) -> egui::TextureId {
+                match egui::Image::new(uri)
+                    .load_for_size(ctx, egui::Vec2::splat(212.0))
+                    .unwrap()
+                {
+                    egui::load::TexturePoll::Ready { texture } => texture.id,
+                    _ => panic!("included artwork must be ready"),
+                }
+            }
+            fn painted(shape: &egui::Shape, texture: egui::TextureId) -> bool {
+                match shape {
+                    egui::Shape::Mesh(mesh) => mesh.texture_id == texture,
+                    egui::Shape::Rect(rect) => rect.fill_texture_id() == texture,
+                    egui::Shape::Vec(shapes) => shapes.iter().any(|shape| painted(shape, texture)),
+                    _ => false,
+                }
+            }
+            let small = texture(&ctx, &small_url);
+            let output = radio_frame(&mut app, &ctx);
+            assert!(
+                output
+                    .shapes
+                    .iter()
+                    .any(|shape| painted(&shape.shape, small)),
+                "keep drawing the available cover while the larger image is pending"
+            );
+            // The hero releases source bytes after making a texture. It must still
+            // reuse that texture on the next frame without another request.
+            let output = radio_frame(&mut app, &ctx);
+            assert!(
+                output
+                    .shapes
+                    .iter()
+                    .any(|shape| painted(&shape.shape, small))
+            );
+            ctx.include_bytes("bytes://large.svg", SVG);
+            let large = texture(&ctx, "bytes://large.svg");
+            assert_ne!(small, large);
+            let output = radio_frame(&mut app, &ctx);
+            assert!(
+                output
+                    .shapes
+                    .iter()
+                    .any(|shape| painted(&shape.shape, large)),
+                "upgrade to the preferred cover when it arrives"
+            );
+        }
     }
 
     #[test]
@@ -230,6 +519,7 @@ mod tests {
                         tracks: vec![],
                     }),
                     generation: 1,
+                    ..Default::default()
                 },
             );
             let ctx = egui::Context::default();
@@ -256,17 +546,6 @@ mod tests {
                 output
             };
             let output = draw(vec![]);
-            fn text_position(shape: &egui::Shape, label: &str) -> Option<egui::Pos2> {
-                match shape {
-                    egui::Shape::Text(text) if text.galley.job.text == label => {
-                        Some(text.pos + text.galley.size() / 2.0)
-                    }
-                    egui::Shape::Vec(shapes) => {
-                        shapes.iter().find_map(|shape| text_position(shape, label))
-                    }
-                    _ => None,
-                }
-            }
             let pos = output
                 .shapes
                 .iter()
@@ -288,7 +567,9 @@ mod tests {
             if label == "Refresh radio" {
                 assert!(matches!(&actions[0], Action::Reload(Page::Radio(id)) if id == "seed"));
             } else if label == "Go to song radio" {
-                assert!(matches!(&actions[0], Action::Open(Page::Radio(id)) if id == "seed"));
+                assert!(
+                    matches!(&actions[0], Action::OpenRadio(track) if track.uri == "spotify:track:seed")
+                );
             } else {
                 assert!(
                     matches!(&actions[0], Action::PlayTrackRadio(uri) if uri == "spotify:track:seed")

@@ -129,8 +129,8 @@ impl AppDirs {
         self.state.join("session.json")
     }
 
-    /// What was played here, which Spotify never hears about and so
-    /// cannot tell us later. See [`crate::history`].
+    /// Local play history, retained independently of Spotify history.
+    /// See [`crate::history`].
     pub fn history_file(&self) -> PathBuf {
         self.state.join("history.json")
     }

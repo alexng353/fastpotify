@@ -217,12 +217,13 @@ hyper-proxy2 = { git = "https://github.com/crmne/hyper-proxy2", rev = "efca48113
 # fallback, an in-memory credential cache for platform storage, and full
 # playback-state recovery after a session disconnect.
 # Recovery is proposed upstream in librespot-org/librespot#1765.
+# This personal build also retains Spotify listening reports.
 # Every librespot crate comes from the
 # fork so one copy exists. Drop patches as upstream takes them.
-librespot-audio = { git = "https://github.com/crmne/librespot", rev = "669e004ec7a79e6eea0f87779efc69680793d3b7" }
-librespot-connect = { git = "https://github.com/crmne/librespot", rev = "669e004ec7a79e6eea0f87779efc69680793d3b7" }
-librespot-core = { git = "https://github.com/crmne/librespot", rev = "669e004ec7a79e6eea0f87779efc69680793d3b7" }
-librespot-metadata = { git = "https://github.com/crmne/librespot", rev = "669e004ec7a79e6eea0f87779efc69680793d3b7" }
-librespot-oauth = { git = "https://github.com/crmne/librespot", rev = "669e004ec7a79e6eea0f87779efc69680793d3b7" }
-librespot-playback = { git = "https://github.com/crmne/librespot", rev = "669e004ec7a79e6eea0f87779efc69680793d3b7" }
-librespot-protocol = { git = "https://github.com/crmne/librespot", rev = "669e004ec7a79e6eea0f87779efc69680793d3b7" }
+librespot-audio = { git = "https://github.com/alexng353/librespot", rev = "5934b13e106f63614b44b1e86e91117b8a427a31" }
+librespot-connect = { git = "https://github.com/alexng353/librespot", rev = "5934b13e106f63614b44b1e86e91117b8a427a31" }
+librespot-core = { git = "https://github.com/alexng353/librespot", rev = "5934b13e106f63614b44b1e86e91117b8a427a31" }
+librespot-metadata = { git = "https://github.com/alexng353/librespot", rev = "5934b13e106f63614b44b1e86e91117b8a427a31" }
+librespot-oauth = { git = "https://github.com/alexng353/librespot", rev = "5934b13e106f63614b44b1e86e91117b8a427a31" }
+librespot-playback = { git = "https://github.com/alexng353/librespot", rev = "5934b13e106f63614b44b1e86e91117b8a427a31" }
+librespot-protocol = { git = "https://github.com/alexng353/librespot", rev = "5934b13e106f63614b44b1e86e91117b8a427a31" }

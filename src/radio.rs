@@ -14,6 +14,22 @@ pub struct Station {
     pub tracks: Vec<Track>,
 }
 
+impl Station {
+    fn with_seed_first(seed: Track, mut tracks: Vec<Track>) -> Self {
+        let recording = seed.recording_key();
+        // Spotify may omit the seed or return a different release of the same
+        // recording. Keep the chosen track once, then preserve station order.
+        tracks.retain(|track| {
+            track.uri != seed.uri
+                && !recording
+                    .as_ref()
+                    .is_some_and(|key| track.recording_key().as_ref() == Some(key))
+        });
+        tracks.insert(0, seed.clone());
+        Self { seed, tracks }
+    }
+}
+
 #[derive(Default)]
 pub struct RadioPage {
     /// Keep the header independent of recommendation requests and cache eviction.
@@ -56,7 +72,7 @@ pub async fn resolve(session: &Session, seed: &str) -> Result<Station> {
         batch.sort_by_key(|(index, _)| *index);
         tracks.extend(batch.into_iter().map(|(_, track)| track));
     }
-    Ok(Station { seed, tracks })
+    Ok(Station::with_seed_first(seed, tracks))
 }
 
 fn station_uris(context: &Context) -> Result<Vec<SpotifyUri>> {
@@ -139,6 +155,45 @@ fn metadata_track(track: MetadataTrack, image_url: &str) -> Result<Track> {
 mod tests {
     use super::*;
     use librespot_protocol::{context_page::ContextPage, context_track::ContextTrack};
+
+    #[test]
+    fn radio_starts_with_seed_and_preserves_recommendation_order() {
+        let seed = Track {
+            uri: "spotify:track:seed".into(),
+            name: "The One That Got Away".into(),
+            external_ids: ExternalIds {
+                isrc: Some("seed-recording".into()),
+            },
+            ..Default::default()
+        };
+        let a = Track {
+            uri: "spotify:track:a".into(),
+            ..Default::default()
+        };
+        let b = Track {
+            uri: "spotify:track:b".into(),
+            ..Default::default()
+        };
+        let alternate_seed = Track {
+            uri: "spotify:track:alternate".into(),
+            external_ids: seed.external_ids.clone(),
+            ..Default::default()
+        };
+        for recommendations in [
+            vec![a.clone(), b.clone()],
+            vec![
+                a.clone(),
+                seed.clone(),
+                alternate_seed,
+                b.clone(),
+                seed.clone(),
+            ],
+        ] {
+            let station = Station::with_seed_first(seed.clone(), recommendations);
+            assert_eq!(station.tracks, vec![seed.clone(), a.clone(), b.clone()]);
+            assert_eq!(station.seed, seed);
+        }
+    }
 
     #[test]
     fn radio_metadata_preserves_recording_identity() {

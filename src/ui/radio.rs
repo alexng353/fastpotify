@@ -35,7 +35,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
             liked: false,
             kind: "Song radio",
             title: &title,
-            description: Some("Starts with this song, followed by Spotify recommendations.".into()),
+            description: Some(
+                "Spotify's radio playlist. Browse now, play when you're ready.".into(),
+            ),
             byline: seed
                 .as_ref()
                 .map(|track| vec![(track.artist_names(), None)])
@@ -69,8 +71,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
                 page.generation,
             );
             let play_uris = view.view_uris.clone().unwrap_or_else(|| Arc::clone(&uris));
-            let playing_here = app.playing_context_uri().as_deref()
-                == Some(format!("spotify:station:track:{id}").as_str())
+            let playing_here = app.playing_context_uri().as_deref() == Some(station.uri.as_str())
                 && app.believed_playing();
             ui.horizontal(|ui| {
                 if theme::circle_button(
@@ -94,7 +95,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
                         app.actions.push(Action::PlayFromRow {
                             context: RowContext::View {
                                 uris: play_uris,
-                                context_uri: format!("spotify:station:track:{id}"),
+                                context_uri: station.uri.clone(),
                             },
                             uri: String::new(),
                             index: 0,
@@ -118,7 +119,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
                     pagination: None,
                     context: RowContext::View {
                         uris,
-                        context_uri: format!("spotify:station:track:{id}"),
+                        context_uri: station.uri.clone(),
                     },
                     show_album: true,
                     show_cover: true,

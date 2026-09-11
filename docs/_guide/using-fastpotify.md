@@ -115,17 +115,17 @@ Linux panels or the macOS Dock.
 
 ## Song radio
 
-Right-click a song and choose **Go to song radio** to open its station as a
+Right-click a song and choose **Go to song radio** to open its radio playlist as a
 page. Its header immediately shows the selected song's name, artist, and
 available album cover while recommendations load. This keeps your music and
-queue playing as they are. The selected song is first, followed by Spotify's
-recommendations in their returned order. Duplicate appearances of the seed
-recording are removed. The page's play button and song rows play that exact
-list. Choose **Refresh radio** to
-ask for a new selection.
+queue playing as they are. Fastpotify asks Spotify for the song's radio playlist
+and preserves its track order without adding or removing songs. The page's play
+button and song rows play that exact list. Choose **Refresh radio** to ask
+Spotify for the current selection again.
 
-Choose **Start song radio** to start the station immediately on this
-computer and show the Queue tab. Browsing radio requires the local playback
+Choose **Start song radio** to load and play that radio playlist on this
+computer and show the Queue tab. Choosing another playback action while it
+loads cancels the pending start. Browsing radio requires the local playback
 sign-in too, but does not start or transfer playback. If it is not set up,
 complete **Set up playback here**, then retry the radio page.
 When restoring a radio page at startup, it retries automatically once the

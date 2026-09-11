@@ -45,6 +45,7 @@ everyday use, and connection details.
 - **Song radio.** Choose **Go to song radio** to browse Spotify's station
   without changing playback, or **Start song radio** to play it immediately.
   The song's name, artist, and available cover stay visible while radio loads.
+  The radio page starts with that song, then Spotify's recommendations.
   Browsing uses the local playback sign-in; it does not activate this device.
 - **Home** with Made for you, Recently played, your top artists and songs, and
   recommendations. Right-click playlist shortcuts and shelf cards for their actions.

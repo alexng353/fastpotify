@@ -234,7 +234,8 @@ byte count using its cache key instead of the URL. Local receiver discovery
 also reports its elapsed time and receiver count. Audio timing runs from the
 player's Loading event to Playing or Paused; background audio preloading has
 no completion event and is not reported as a finished load. Radio logs include
-the first returned track and the seed's zero-based position (`None` if absent).
+the first displayed track and the seed's zero-based position in the assembled
+station. The selected seed is inserted before Spotify's recommendations.
 A disk-cache miss or invalid entry says `Load missed`; errors say `Load failed`;
 dropped in-flight operations say `Load cancelled`. API errors include a category
 and HTTP status when available, without logging response bodies.

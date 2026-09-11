@@ -35,9 +35,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
             liked: false,
             kind: "Song radio",
             title: &title,
-            description: Some(
-                "Songs picked by Spotify. Browse now, play when you're ready.".into(),
-            ),
+            description: Some("Starts with this song, followed by Spotify recommendations.".into()),
             byline: seed
                 .as_ref()
                 .map(|track| vec![(track.artist_names(), None)])

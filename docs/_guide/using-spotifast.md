@@ -320,6 +320,9 @@ Items you pin in Spotifast remain at the top, including items from a closed
 folder. Sorting or dragging Library items changes their order only in
 Spotifast; it does not rearrange your Spotify library.
 
+The sidebar restores the last complete playlist library for your account
+while refreshing it in the background. Failed refreshes keep the saved list.
+
 Drag playlists to choose **Local custom order**. New playlists appear below the
 pinned group. Selecting **Name**, **Recently played** or **Spotify custom order**
 keeps the saved arrangement, so selecting **Local custom order** restores it.

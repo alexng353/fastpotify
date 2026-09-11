@@ -306,6 +306,8 @@ pub struct App {
     /// A play request made while the local engine was still connecting; it
     /// starts the moment the engine reports ready.
     queued_play: Option<PlayRequest>,
+    /// A direct radio play waiting for the selected playlist to resolve.
+    pending_radio_play: Option<(String, u64)>,
     /// Last list sent to local playback. Used for autoplay because librespot
     /// cannot continue a list without a context URI.
     local_list: Option<Vec<String>>,
@@ -595,6 +597,7 @@ impl App {
             pending_play_keys: Vec::new(),
             pending_play_at: None,
             queued_play: None,
+            pending_radio_play: None,
             local_list: None,
             pending_transfer_to: None,
             remote_recheck_at: None,
@@ -1216,6 +1219,7 @@ impl App {
         // A request queued behind a connecting engine stays pending for as
         // long as the engine may take; an ordinary request times out fast.
         self.queued_play.is_some()
+            || self.pending_radio_play.is_some()
             || self
                 .pending_play_at
                 .is_some_and(|at| at.elapsed() < Duration::from_secs(8))
@@ -1455,6 +1459,7 @@ impl App {
         self.playlist_pages.clear();
         self.album_pages.clear();
         self.radio_pages.clear();
+        self.pending_radio_play = None;
         self.artist_pages.clear();
         self.show_pages.clear();
         self.saved.clear();
@@ -4558,6 +4563,7 @@ impl App {
     /// in one ordered exchange: two independent requests race, and shuffle
     /// sometimes lost.
     fn play_request(&mut self, request: PlayRequest, shuffle_first: bool) {
+        self.cancel_radio_play();
         // Shuffle applies across contexts until disabled. A selected row still
         // starts first; otherwise choose a random starting track.
         let mut request = request;
@@ -5326,6 +5332,20 @@ impl App {
     }
 
     fn apply(&mut self, action: Action, ctx: &egui::Context) {
+        if matches!(
+            &action,
+            Action::TogglePlay
+                | Action::Next
+                | Action::Previous
+                | Action::Seek(_)
+                | Action::SeekBy(_)
+                | Action::Transfer(_)
+                | Action::ActivateReceiver(_)
+                | Action::PlayFromRow { .. }
+                | Action::SignOut
+        ) {
+            self.cancel_radio_play();
+        }
         match action {
             Action::Open(page) => self.open(page),
             Action::OpenRadio(track) => self.open_radio(*track),
@@ -5368,31 +5388,7 @@ impl App {
                 self.play_request(request, false);
             }
             Action::PlayTrackRadio(uri) => {
-                // Load the station URI as a 50-track local context. Autoplay
-                // from a bare track fails inside librespot and clears the queue.
-                // The Web API cannot start a station on another device.
-                let id = util::uri_id(&uri).unwrap_or_default();
-                let station = format!("spotify:station:track:{id}");
-                self.local_list = None;
-                self.backend.player(PlayerCommand::Load(LoadSpec {
-                    context_uri: Some(station.clone()),
-                    play: true,
-                    autoplay: false,
-                    ..LoadSpec::default()
-                }));
-                self.optimistic_playing = Some((true, Instant::now()));
-                // Show the station queue immediately.
-                self.queue_tab = QueueTab::Queue;
-                self.assumed_context = Some(AssumedContext {
-                    uri: station,
-                    shuffle: None,
-                    at: Instant::now(),
-                });
-                if !matches!(self.page(), Page::Queue) && !self.show_queue_panel {
-                    self.show_queue_panel = true;
-                    self.show_lyrics_panel = false;
-                }
-                self.refresh_queue(true);
+                self.start_radio(&uri);
             }
             Action::PlayUris { uris, index } => {
                 if uris.is_empty() {
@@ -8195,11 +8191,8 @@ mod tests {
         let mut app = headless_app();
         app.apply(Action::PlayTrackRadio("spotify:track:xyz".into()), &ctx);
         assert!(app.show_queue_panel);
-        assert_eq!(
-            app.playing_context_uri().as_deref(),
-            Some("spotify:station:track:xyz"),
-            "the station is what the interface calls playing"
-        );
+        assert!(app.pending_radio_play.is_some());
+        assert!(app.backend.take_player_commands().is_empty());
     }
 
     /// MilkDrop playback keys produce the same actions as the main window.

@@ -1,15 +1,16 @@
 //! Read-only song-radio resolution through the existing librespot session.
 
 use anyhow::{Context as _, Result, ensure};
-use librespot_core::{Session, SpotifyId, SpotifyUri};
-use librespot_metadata::{Metadata, Track as MetadataTrack};
-use librespot_protocol::context::Context;
+use librespot_core::{Session, SpotifyUri};
+use librespot_metadata::{Metadata, Playlist, Track as MetadataTrack};
+use serde::Deserialize;
 
 use crate::api::models::{Album, ArtistRef, ExternalIds, Image, Track};
 use crate::model::Loadable;
 
 #[derive(Clone, Debug, Default)]
 pub struct Station {
+    pub uri: String,
     pub seed: Track,
     pub tracks: Vec<Track>,
 }
@@ -22,19 +23,29 @@ pub struct RadioPage {
     pub generation: u64,
 }
 
-/// Resolving a context and reading metadata never activates Connect or loads audio.
+/// Reading a radio playlist never activates Connect or loads audio.
 pub async fn resolve(session: &Session, seed: &str) -> Result<Station> {
     let seed_uri = SpotifyUri::from_uri(&format!("spotify:track:{seed}"))?;
-    let context = session
+    // The desktop client's Go to song radio resolves an inspired-by playlist.
+    // A station context can return a different selection, even for the same seed.
+    let response = session
         .spclient()
-        .get_context(&format!("spotify:station:track:{seed}"))
+        .request_as_json(
+            &reqwest::Method::GET,
+            &format!(
+                "/inspiredby-mix/v2/seed_to_playlist/{}?response-format=json",
+                seed_uri.to_uri()?
+            ),
+            None,
+            None,
+        )
         .await
         .context("Couldn't load song radio")?;
-    let uris = station_uris(&context)?;
-    ensure!(
-        !uris.is_empty(),
-        "Spotify returned no songs for this radio. Try again."
-    );
+    let playlist_uri = playlist_uri(&response)?;
+    let playlist = Playlist::get(session, &playlist_uri)
+        .await
+        .context("Couldn't load the radio playlist")?;
+    let uris = playlist_uris(&playlist)?;
     let image_url = session
         .get_user_attribute("image-url")
         .unwrap_or_else(|| "https://i.scdn.co/image/{file_id}".into());
@@ -56,31 +67,56 @@ pub async fn resolve(session: &Session, seed: &str) -> Result<Station> {
         batch.sort_by_key(|(index, _)| *index);
         tracks.extend(batch.into_iter().map(|(_, track)| track));
     }
-    Ok(Station { seed, tracks })
+    Ok(Station {
+        uri: playlist_uri.to_uri()?,
+        seed,
+        tracks,
+    })
 }
 
-fn station_uris(context: &Context) -> Result<Vec<SpotifyUri>> {
-    context
-        .pages
-        .iter()
-        .flat_map(|page| &page.tracks)
-        .map(|track| {
-            let uri = match track.uri.as_deref().filter(|uri| !uri.is_empty()) {
-                Some(uri) => SpotifyUri::from_uri(uri)?,
-                None => SpotifyUri::Track {
-                    id: SpotifyId::from_raw(
-                        track
-                            .gid
-                            .as_deref()
-                            .context("Spotify returned a radio song without an identifier")?,
-                    )?,
-                },
-            };
+fn playlist_uri(response: &[u8]) -> Result<SpotifyUri> {
+    #[derive(Deserialize)]
+    struct Response {
+        #[serde(rename = "mediaItems")]
+        media_items: Vec<Item>,
+    }
+    #[derive(Deserialize)]
+    struct Item {
+        uri: String,
+    }
+    let response: Response =
+        serde_json::from_slice(response).context("Spotify returned an invalid radio response")?;
+    let item = response
+        .media_items
+        .first()
+        .context("Spotify returned no playlist for this radio. Try again.")?;
+    let uri = SpotifyUri::from_uri(&item.uri)?;
+    ensure!(
+        matches!(uri, SpotifyUri::Playlist { .. }),
+        "Spotify returned a non-playlist radio result"
+    );
+    Ok(uri)
+}
+
+fn playlist_uris(playlist: &Playlist) -> Result<Vec<SpotifyUri>> {
+    ensure!(
+        !playlist.contents.is_truncated
+            && playlist.contents.position == 0
+            && usize::try_from(playlist.length).ok() == Some(playlist.contents.items.len()),
+        "Spotify returned an incomplete radio playlist. Try again."
+    );
+    ensure!(
+        !playlist.contents.items.is_empty(),
+        "Spotify returned no songs for this radio. Try again."
+    );
+    playlist
+        .tracks()
+        .map(|uri| {
             ensure!(
                 matches!(uri, SpotifyUri::Track { .. }),
                 "Spotify returned a non-song radio item"
             );
-            Ok(uri)
+            Ok(uri.clone())
         })
         .collect()
 }
@@ -138,7 +174,7 @@ fn metadata_track(track: MetadataTrack, image_url: &str) -> Result<Track> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use librespot_protocol::{context_page::ContextPage, context_track::ContextTrack};
+    use librespot_protocol::playlist4_external::{Item, ListItems, SelectedListContent};
 
     #[test]
     fn radio_metadata_preserves_recording_identity() {
@@ -167,59 +203,84 @@ mod tests {
         assert_eq!(track.recording_key().as_deref(), Some("isrc:GBUM71029604"));
     }
 
-    #[test]
-    fn radio_identifiers_preserve_order_and_accept_binary_ids() {
-        let context = Context {
-            pages: vec![ContextPage {
-                tracks: vec![
-                    ContextTrack {
-                        uri: Some("spotify:track:3JA9Jsuxr4xgHXEawAdCp4".into()),
-                        ..Default::default()
-                    },
-                    ContextTrack {
-                        gid: Some(vec![0; 16]),
-                        ..Default::default()
-                    },
-                ],
+    fn playlist(uris: &[&str]) -> Playlist {
+        Playlist::parse(
+            &SelectedListContent {
+                length: Some(uris.len() as i32),
+                contents: Some(ListItems {
+                    pos: Some(0),
+                    truncated: Some(false),
+                    items: uris
+                        .iter()
+                        .map(|uri| Item {
+                            uri: Some((*uri).into()),
+                            ..Default::default()
+                        })
+                        .collect(),
+                    ..Default::default()
+                })
+                .into(),
                 ..Default::default()
-            }],
-            ..Default::default()
-        };
-        let uris = station_uris(&context)
-            .unwrap()
-            .iter()
-            .map(|uri| uri.to_uri().unwrap())
-            .collect::<Vec<_>>();
+            },
+            &SpotifyUri::from_uri("spotify:playlist:37i9dQZF1E8CaBx7klrZT9").unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn radio_uses_the_playlist_from_spotifys_response() {
+        let response =
+            br#"{"mediaItems":[{"uri":"spotify:playlist:37i9dQZF1E8CaBx7klrZT9"}],"total":1}"#;
         assert_eq!(
-            uris,
-            [
-                "spotify:track:3JA9Jsuxr4xgHXEawAdCp4",
-                "spotify:track:0000000000000000000000"
-            ]
+            playlist_uri(response).unwrap().to_uri().unwrap(),
+            "spotify:playlist:37i9dQZF1E8CaBx7klrZT9"
         );
     }
 
     #[test]
-    fn malformed_radio_items_are_errors_instead_of_silent_omissions() {
-        for track in [
-            ContextTrack::default(),
-            ContextTrack {
-                gid: Some(vec![0; 5]),
-                ..Default::default()
-            },
-            ContextTrack {
-                uri: Some("spotify:album:3JA9Jsuxr4xgHXEawAdCp4".into()),
-                ..Default::default()
-            },
+    fn missing_or_invalid_radio_playlists_are_errors() {
+        for response in [
+            br#"{"mediaItems":[]}"#.as_slice(),
+            br#"{"mediaItems":[{"uri":"spotify:track:6hkOqJ5mE093AQf2lbZnsG"}]}"#,
+            br#"{"mediaItems":[{"uri":"invalid"}]}"#,
+            br#"{"mediaItems":[{}]}"#,
+            br#"{}"#,
         ] {
-            let context = Context {
-                pages: vec![ContextPage {
-                    tracks: vec![track],
-                    ..Default::default()
-                }],
-                ..Default::default()
-            };
-            assert!(station_uris(&context).is_err());
+            assert!(playlist_uri(response).is_err());
         }
+    }
+
+    #[test]
+    fn radio_preserves_the_playlist_order_and_duplicate_entries() {
+        let uris = [
+            "spotify:track:5Ohxk2dO5COHF1krpoPigN",
+            "spotify:track:6hkOqJ5mE093AQf2lbZnsG",
+            "spotify:track:5Ohxk2dO5COHF1krpoPigN",
+        ];
+        let playlist = playlist(&uris);
+        assert_eq!(
+            playlist_uris(&playlist)
+                .unwrap()
+                .iter()
+                .map(|uri| uri.to_uri().unwrap())
+                .collect::<Vec<_>>(),
+            uris
+        );
+    }
+
+    #[test]
+    fn empty_truncated_or_non_song_radio_playlists_are_errors() {
+        assert!(playlist_uris(&playlist(&[])).is_err());
+        assert!(playlist_uris(&playlist(&["spotify:album:6hkOqJ5mE093AQf2lbZnsG"])).is_err());
+        let full = playlist(&["spotify:track:6hkOqJ5mE093AQf2lbZnsG"]);
+        let mut truncated = full.clone();
+        truncated.contents.is_truncated = true;
+        assert!(playlist_uris(&truncated).is_err());
+        let mut missing = full.clone();
+        missing.length = 2;
+        assert!(playlist_uris(&missing).is_err());
+        let mut offset = full;
+        offset.contents.position = 1;
+        assert!(playlist_uris(&offset).is_err());
     }
 }

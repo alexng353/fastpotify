@@ -33,9 +33,10 @@ everyday use, and connection details.
   podcasts, and saved episodes. Filter, pin, and reorder sidebar items.
 - **Search** across songs, artists, albums, playlists, podcasts, and episodes,
   with a top result and per-type views.
-- **Song radio.** Choose **Go to song radio** to browse Spotify's station
+- **Song radio.** Choose **Go to song radio** to browse Spotify's radio playlist
   without changing playback, or **Start song radio** to play it immediately.
   The song's name, artist, and available cover stay visible while radio loads.
+  Songs appear in the order returned by Spotify, and playback uses that list.
   Browsing uses the local playback sign-in; it does not activate this device.
 - **Home** with Made for you, Recently played, your top artists and songs, and
   recommendations.

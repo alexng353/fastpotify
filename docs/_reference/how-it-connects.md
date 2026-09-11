@@ -84,10 +84,12 @@ uses the Web API for subsequent control requests.
 
 ## The engine
 
-Song-radio pages resolve a station and read its track metadata through the
-existing librespot session. Browsing does not load audio, activate Spotify
-Connect, or replace the current queue. These requests do not use the shared
-Web API quota. Playback begins only when a play control or **Start song
+Song-radio pages use Spotify's inspired-by playlist resolver, the same route
+used by the desktop client's **Go to song radio** action. Fastpotify reads the
+returned playlist and its track metadata through the existing librespot
+session, preserving Spotify's order. Browsing does not load audio, activate
+Spotify Connect, or replace the current queue. These requests do not use the
+shared Web API quota. Playback begins only when a play control or **Start song
 radio** is used.
 
 Playback runs on a separate runtime. Librespot maintains the Spotify Connect

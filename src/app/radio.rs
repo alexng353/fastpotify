@@ -3,6 +3,76 @@
 use super::*;
 
 impl App {
+    pub(super) fn cancel_radio_play(&mut self) {
+        if self.pending_radio_play.take().is_some() {
+            self.clear_play_pending();
+        }
+    }
+
+    pub(super) fn start_radio(&mut self, uri: &str) {
+        let Some(id) = util::uri_id(uri) else {
+            return;
+        };
+        self.cancel_radio_play();
+        self.queued_play = None;
+        let page = self.radio_pages.entry(id.to_owned()).or_default();
+        if matches!(page.station, Loadable::Failed(_)) {
+            page.station = Loadable::NotLoaded;
+        }
+        self.load_radio(id);
+        let generation = self.radio_pages[id].generation;
+        self.pending_radio_play = Some((id.to_owned(), generation));
+        self.set_play_pending(vec![uri.to_owned()]);
+        self.queue_tab = QueueTab::Queue;
+        if !matches!(self.page(), Page::Queue) && !self.show_queue_panel {
+            self.show_queue_panel = true;
+            self.show_lyrics_panel = false;
+        }
+        self.play_loaded_radio(id, generation);
+    }
+
+    fn play_loaded_radio(&mut self, id: &str, generation: u64) {
+        if !self
+            .pending_radio_play
+            .as_ref()
+            .is_some_and(|(pending_id, pending_generation)| {
+                pending_id == id && *pending_generation == generation
+            })
+        {
+            return;
+        }
+        let Some(station) = self.radio_pages.get(id).and_then(|page| page.station.get()) else {
+            return;
+        };
+        let context = station.uri.clone();
+        let uris: Vec<String> = station
+            .tracks
+            .iter()
+            .map(|track| track.uri.clone())
+            .collect();
+        self.cancel_radio_play();
+        let Some(first) = uris.first().cloned() else {
+            self.toast("Spotify returned no songs for this radio. Try again.");
+            return;
+        };
+        self.expect_track(first.clone());
+        self.set_play_pending(vec![first]);
+        self.note_recent_context(&context);
+        self.local_list = Some(uris.clone());
+        self.backend.player(PlayerCommand::Load(LoadSpec {
+            uris,
+            play: true,
+            ..LoadSpec::default()
+        }));
+        self.optimistic_playing = Some((true, Instant::now()));
+        self.assumed_context = Some(AssumedContext {
+            uri: context,
+            shuffle: None,
+            at: Instant::now(),
+        });
+        self.refresh_queue(true);
+    }
+
     pub(crate) fn radio_seed(&self, id: &str) -> Option<&Track> {
         self.radio_pages
             .get(id)
@@ -38,6 +108,11 @@ impl App {
         }
         page.generation = self.load_generation;
         page.station = Loadable::Loading;
+        if let Some((pending_id, generation)) = self.pending_radio_play.as_mut()
+            && pending_id == id
+        {
+            *generation = page.generation;
+        }
         self.backend.send(Command::Radio {
             id: id.to_owned(),
             generation: page.generation,
@@ -73,8 +148,15 @@ impl App {
                     }
                 }
                 self.request_contains(uris);
+                self.play_loaded_radio(&id, generation);
             }
-            Err(error) => page.station = Loadable::Failed(error),
+            Err(error) => {
+                page.station = Loadable::Failed(error.clone());
+                if self.pending_radio_play.as_ref() == Some(&(id, generation)) {
+                    self.cancel_radio_play();
+                    self.toast(error);
+                }
+            }
         }
     }
 }
@@ -105,6 +187,158 @@ mod tests {
         };
         app.local_ready = true;
         app
+    }
+
+    #[test]
+    fn starting_radio_waits_for_spotifys_playlist_before_loading_audio() {
+        let mut app = app();
+        app.apply(
+            Action::PlayTrackRadio("spotify:track:seed".into()),
+            &egui::Context::default(),
+        );
+        assert!(
+            app.backend.take_player_commands().is_empty(),
+            "starting radio must resolve Spotify's playlist before loading audio"
+        );
+        assert!(matches!(app.radio_pages["seed"].station, Loadable::Loading));
+        assert_eq!(app.queue_tab, QueueTab::Queue);
+    }
+
+    fn resolved_radio() -> crate::radio::Station {
+        crate::radio::Station {
+            uri: "spotify:playlist:radio".into(),
+            seed: Track {
+                uri: "spotify:track:seed".into(),
+                ..Default::default()
+            },
+            tracks: ["first", "seed", "first"]
+                .map(|id| Track {
+                    id: Some(id.into()),
+                    uri: format!("spotify:track:{id}"),
+                    ..Default::default()
+                })
+                .to_vec(),
+        }
+    }
+
+    #[test]
+    fn radio_start_plays_the_resolved_order_without_inserting_or_deduplicating() {
+        let mut app = app();
+        app.start_radio("spotify:track:seed");
+        let generation = app.radio_pages["seed"].generation;
+        app.receive_radio("seed".into(), generation, Ok(resolved_radio()));
+        let commands = app.backend.take_player_commands();
+        let [PlayerCommand::Load(load)] = commands.as_slice() else {
+            panic!("the resolved radio must issue one playback request");
+        };
+        assert_eq!(
+            load.uris,
+            [
+                "spotify:track:first",
+                "spotify:track:seed",
+                "spotify:track:first"
+            ]
+        );
+        assert!(load.context_uri.is_none());
+        assert!(load.play);
+        assert_eq!(
+            app.playing_context_uri().as_deref(),
+            Some("spotify:playlist:radio")
+        );
+        assert!(app.pending_radio_play.is_none());
+    }
+
+    #[test]
+    fn radio_start_uses_an_already_loaded_playlist() {
+        let mut app = app();
+        app.radio_pages.entry("seed".into()).or_default().station =
+            Loadable::Loaded(resolved_radio());
+        app.start_radio("spotify:track:seed");
+        assert!(
+            matches!(app.backend.take_player_commands().as_slice(), [PlayerCommand::Load(load)] if load.uris.len() == 3)
+        );
+        assert!(app.pending_radio_play.is_none());
+    }
+
+    #[test]
+    fn late_radio_results_cannot_override_newer_playback_controls() {
+        for action in [
+            Action::PlayUris {
+                uris: vec!["spotify:track:other".into()],
+                index: 0,
+            },
+            Action::TogglePlay,
+            Action::Next,
+            Action::Previous,
+            Action::Seek(1000),
+            Action::Transfer("another-device".into()),
+            Action::SignOut,
+        ] {
+            let mut app = app();
+            app.start_radio("spotify:track:seed");
+            let generation = app.radio_pages["seed"].generation;
+            app.apply(action, &egui::Context::default());
+            app.backend.take_player_commands();
+            app.receive_radio("seed".into(), generation, Ok(resolved_radio()));
+            assert!(
+                app.backend.take_player_commands().is_empty(),
+                "a superseded radio must not start playback"
+            );
+            assert!(app.pending_radio_play.is_none());
+        }
+    }
+
+    #[test]
+    fn only_the_latest_radio_start_can_play() {
+        let mut app = app();
+        app.start_radio("spotify:track:seed");
+        let first = app.radio_pages["seed"].generation;
+        app.start_radio("spotify:track:other");
+        let second = app.radio_pages["other"].generation;
+        app.receive_radio("seed".into(), first, Ok(resolved_radio()));
+        assert!(app.backend.take_player_commands().is_empty());
+        app.receive_radio("other".into(), second, Ok(resolved_radio()));
+        assert!(matches!(
+            app.backend.take_player_commands().as_slice(),
+            [PlayerCommand::Load(_)]
+        ));
+        app.receive_radio("seed".into(), first, Ok(resolved_radio()));
+        assert!(app.backend.take_player_commands().is_empty());
+    }
+
+    #[test]
+    fn refreshing_a_pending_radio_waits_for_the_new_playlist() {
+        let mut app = app();
+        app.start_radio("spotify:track:seed");
+        let first = app.radio_pages["seed"].generation;
+        app.apply(
+            Action::Reload(Page::Radio("seed".into())),
+            &egui::Context::default(),
+        );
+        let second = app.radio_pages["seed"].generation;
+        assert!(second > first);
+        app.receive_radio("seed".into(), first, Ok(resolved_radio()));
+        assert!(app.backend.take_player_commands().is_empty());
+        app.receive_radio("seed".into(), second, Ok(resolved_radio()));
+        assert!(matches!(
+            app.backend.take_player_commands().as_slice(),
+            [PlayerCommand::Load(_)]
+        ));
+    }
+
+    #[test]
+    fn failed_radio_start_reports_the_error_and_can_retry() {
+        let mut app = app();
+        app.start_radio("spotify:track:seed");
+        let generation = app.radio_pages["seed"].generation;
+        app.receive_radio("seed".into(), generation, Err("radio unavailable".into()));
+        assert!(app.pending_radio_play.is_none());
+        assert!(!app.any_play_pending());
+        assert!(app.backend.take_player_commands().is_empty());
+        assert!(!app.toasts.is_empty());
+        app.start_radio("spotify:track:seed");
+        assert!(app.radio_pages["seed"].generation > generation);
+        assert!(matches!(app.radio_pages["seed"].station, Loadable::Loading));
     }
 
     fn text_position(shape: &egui::Shape, label: &str) -> Option<egui::Pos2> {
@@ -227,6 +461,7 @@ mod tests {
             "seed".into(),
             generation,
             Ok(crate::radio::Station {
+                uri: "spotify:playlist:radio".into(),
                 seed: Track {
                     id: Some("seed".into()),
                     name: "Updated song".into(),
@@ -386,6 +621,7 @@ mod tests {
             "seed".into(),
             second,
             Ok(crate::radio::Station {
+                uri: "spotify:playlist:radio".into(),
                 seed: Track {
                     name: "Seed song".into(),
                     ..Default::default()
@@ -436,6 +672,7 @@ mod tests {
             "seed".into(),
             generation,
             Ok(crate::radio::Station {
+                uri: "spotify:playlist:radio".into(),
                 seed: Track::default(),
                 tracks: vec![Track {
                     uri: "spotify:track:radio-release".into(),
@@ -511,6 +748,7 @@ mod tests {
                 "seed".into(),
                 crate::radio::RadioPage {
                     station: Loadable::Loaded(crate::radio::Station {
+                        uri: "spotify:playlist:radio".into(),
                         seed: match &item {
                             PlayableItem::Track(track) => track.clone(),
                             _ => unreachable!(),

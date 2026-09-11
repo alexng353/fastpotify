@@ -284,6 +284,7 @@ pub fn populate(app: &mut App) {
         "t0".into(),
         crate::radio::RadioPage {
             station: Loadable::Loaded(crate::radio::Station {
+                uri: "spotify:playlist:radio".into(),
                 seed: tracks[0].clone(),
                 tracks: tracks.clone(),
             }),

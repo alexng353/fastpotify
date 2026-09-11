@@ -214,12 +214,13 @@ hyper-proxy2 = { git = "https://github.com/crmne/hyper-proxy2", rev = "efca48113
 # normalisation-factor reporting for the visualisers, and a distinct event
 # when Spotify refuses an audio key, bounded socket setup with DNS address
 # fallback, plus an in-memory credential cache for platform storage.
+# This personal build also retains Spotify listening reports.
 # Every librespot crate comes from the
 # fork so one copy exists. Drop patches as upstream takes them.
-librespot-audio = { git = "https://github.com/crmne/librespot", branch = "fastpotify-0.8" }
-librespot-connect = { git = "https://github.com/crmne/librespot", branch = "fastpotify-0.8" }
-librespot-core = { git = "https://github.com/crmne/librespot", branch = "fastpotify-0.8" }
-librespot-metadata = { git = "https://github.com/crmne/librespot", branch = "fastpotify-0.8" }
-librespot-oauth = { git = "https://github.com/crmne/librespot", branch = "fastpotify-0.8" }
-librespot-playback = { git = "https://github.com/crmne/librespot", branch = "fastpotify-0.8" }
-librespot-protocol = { git = "https://github.com/crmne/librespot", branch = "fastpotify-0.8" }
+librespot-audio = { git = "https://github.com/alexng353/librespot", rev = "f5800363c98dd2f714b39d479099c78b3916378f" }
+librespot-connect = { git = "https://github.com/alexng353/librespot", rev = "f5800363c98dd2f714b39d479099c78b3916378f" }
+librespot-core = { git = "https://github.com/alexng353/librespot", rev = "f5800363c98dd2f714b39d479099c78b3916378f" }
+librespot-metadata = { git = "https://github.com/alexng353/librespot", rev = "f5800363c98dd2f714b39d479099c78b3916378f" }
+librespot-oauth = { git = "https://github.com/alexng353/librespot", rev = "f5800363c98dd2f714b39d479099c78b3916378f" }
+librespot-playback = { git = "https://github.com/alexng353/librespot", rev = "f5800363c98dd2f714b39d479099c78b3916378f" }
+librespot-protocol = { git = "https://github.com/alexng353/librespot", rev = "f5800363c98dd2f714b39d479099c78b3916378f" }

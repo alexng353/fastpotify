@@ -1674,6 +1674,7 @@ impl App {
     fn handle_playback(&mut self, status: LocalPlayback) {
         match &status {
             LocalPlayback::Ready { device_id } => {
+                let newly_ready = !self.local_ready;
                 self.local_device_id = Some(device_id.clone());
                 self.local_ready = true;
                 // A restored radio page may have requested its station before
@@ -1688,6 +1689,11 @@ impl App {
                 }
                 if let Some(request) = self.queued_play.take() {
                     self.play_request(request, false);
+                } else if newly_ready
+                    && self.resume_only()
+                    && let Some(uri) = self.resume_track.as_ref()
+                {
+                    self.backend.player(PlayerCommand::Preload(uri.clone()));
                 }
             }
             LocalPlayback::Unavailable => {
@@ -3589,7 +3595,9 @@ impl App {
                 self.album_pages.remove(id);
             }
             Page::Radio(id) => {
-                self.radio_pages.remove(id);
+                if let Some(radio) = self.radio_pages.get_mut(id) {
+                    radio.station = Loadable::NotLoaded;
+                }
                 if self
                     .selection
                     .as_ref()
@@ -6815,6 +6823,7 @@ impl App {
         }
         match action {
             Action::Open(page) => self.open(page),
+            Action::OpenRadio(track) => self.open_radio(*track),
             Action::OpenUri(uri) => {
                 if let Some(page) = Page::from_uri(&uri) {
                     self.open(page);
@@ -9995,6 +10004,76 @@ mod tests {
         app.resume_position_ms = 19_566;
         app.seek(90_000);
         assert_eq!(app.resume_position_ms, 90_000);
+    }
+
+    #[test]
+    fn startup_preloads_the_remembered_song_without_playing() {
+        let mut app = headless_app();
+        app.backend.set_offline(true);
+        app.local_ready = false;
+        app.resume_track = Some("spotify:track:14XWXWv5FoCbFzLksawpEe".into());
+        app.resume_position_ms = 19_566;
+        app.handle_playback(LocalPlayback::Connecting);
+        assert!(app.backend.take_player_commands().is_empty());
+        app.local.connected = true;
+        app.handle_playback(LocalPlayback::Ready {
+            device_id: "local".into(),
+        });
+        let commands = app.backend.take_player_commands();
+        assert_eq!(commands.len(), 1, "ready should preload the saved song");
+        assert!(
+            matches!(&commands[0], PlayerCommand::Preload(uri) if Some(uri) == app.resume_track.as_ref())
+        );
+        app.handle_playback(LocalPlayback::Ready {
+            device_id: "local".into(),
+        });
+        assert!(
+            app.backend.take_player_commands().is_empty(),
+            "duplicate readiness must not preload again"
+        );
+        assert_eq!(app.resume_position_ms, 19_566);
+        assert!(!app.local.is_active());
+        assert!(app.queued_play.is_none());
+    }
+
+    #[test]
+    fn startup_without_a_remembered_song_does_not_preload() {
+        let mut app = headless_app();
+        app.backend.set_offline(true);
+        app.local_ready = false;
+        app.resume_track = None;
+        app.local.connected = true;
+        app.handle_playback(LocalPlayback::Ready {
+            device_id: "local".into(),
+        });
+        assert!(app.backend.take_player_commands().is_empty());
+    }
+
+    #[test]
+    fn a_queued_play_takes_priority_over_startup_preloading() {
+        let mut app = headless_app();
+        app.backend.set_offline(true);
+        app.local_ready = false;
+        app.resume_track = Some("spotify:track:14XWXWv5FoCbFzLksawpEe".into());
+        app.resume_position_ms = 19_566;
+        app.settings.playback_authorized = true;
+        app.auth = AuthStatus::Starting;
+        app.toggle_play();
+        assert!(app.queued_play.is_some());
+        app.backend.take_player_commands();
+        app.local.connected = true;
+        app.handle_playback(LocalPlayback::Ready {
+            device_id: "local".into(),
+        });
+        let commands = app.backend.take_player_commands();
+        assert!(commands.iter().any(
+            |command| matches!(command, PlayerCommand::Load(spec) if spec.position_ms == 19_566)
+        ));
+        assert!(
+            !commands
+                .iter()
+                .any(|command| matches!(command, PlayerCommand::Preload(_)))
+        );
     }
 
     /// Play resumes the remembered track at its saved position.

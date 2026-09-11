@@ -245,9 +245,11 @@ picker or update window.
 ## Song radio
 
 Right-click a song and choose **Go to song radio** to open its station as a
-page. This keeps your music and queue playing as they are. The page shows
-Spotify's current selection; its play button and song rows play that exact
-list. Choose **Refresh radio** to ask for a new selection.
+page. Its header immediately shows the selected song's name, artist, and
+available album cover while recommendations load. This keeps your music and
+queue playing as they are. The page shows Spotify's current selection; its
+play button and song rows play that exact list. Choose **Refresh radio** to
+ask for a new selection.
 
 Choose **Start song radio** to start the station immediately on this
 computer and show the Queue tab. Browsing radio requires the local playback
@@ -259,7 +261,9 @@ local playback connection is ready.
 ## Recent
 
 The queue panel's second tab combines Spotify's history with tracks played
-through Spotifast, which Spotify does not record.
+through Spotifast. Completed and interrupted listens are also reported to
+Spotify, so they can appear in Spotify's recently played history. Pauses and
+seeks do not add listening time.
 
 Since 0.8.0, choosing any Recent row starts that song on its own,
 and the player bar shows the selection immediately while playback starts.
@@ -272,7 +276,8 @@ shorter than a minute. A newly loaded local repeat earns its own listening
 time; pausing or seeking the current play does not create another entry.
 The same play reported both locally and by Spotify appears once.
 
-The local list is stored in `history.json` and is never uploaded. Settings →
+The local list is stored in `history.json`. This file is never uploaded;
+librespot reports each new listen separately when playback ends. Settings →
 Storage shows its location and has a **Clear history** button.
 
 On Windows, the main window's minimize, maximize, and close buttons share the

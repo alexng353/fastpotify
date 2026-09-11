@@ -288,6 +288,7 @@ pub fn populate(app: &mut App) {
                 tracks: tracks.clone(),
             }),
             generation: 1,
+            ..Default::default()
         },
     );
     for (index, track) in tracks.iter().enumerate() {

@@ -69,6 +69,7 @@ AUR and Homebrew packages now use the Spotifast name. See [rename compatibility]
   badges in narrow windows; hover their icons to read the labels.
 - **Song radio.** Choose **Go to song radio** to browse Spotify's station
   without changing playback, or **Start song radio** to play it immediately.
+  The song's name, artist, and available cover stay visible while radio loads.
   Browsing uses the local playback sign-in; it does not activate this device.
 - **Home** with Made for you, Recently played, your top artists and songs, and
   recommendations. Right-click playlist shortcuts and shelf cards for their actions.
@@ -126,8 +127,9 @@ AUR and Homebrew packages now use the Spotifast name. See [rename compatibility]
 - **Lyrics.** Follow synced lyrics in a side panel or full-screen view, or read
   unsynced lyrics when timestamps are unavailable.
 - **Resumes the last session.** On startup, the last song is paused where it
-  stopped. Play resumes it, and the other playback controls work before it
-  starts.
+  stopped. Once local playback connects, it preloads the song through the
+  normal audio cache without starting playback. Play resumes it, and the
+  other playback controls work before it starts.
 - **Album-art colour.** Pages and the player bar take a tint from the cover
   of what you are looking at or listening to. Turn it off in Settings.
 - **Light and dark**, or follow the system.

@@ -1,7 +1,9 @@
 //! A station is browsed independently of the currently playing queue.
 
+use egui::load::BytesLoader as _;
 use std::sync::Arc;
 
+use crate::api::models::{Track, pick_image};
 use crate::app::App;
 use crate::model::{Action, Loadable, Page, RowContext, TableItem};
 use crate::theme::{self, Icon};
@@ -12,26 +14,24 @@ use super::{
 };
 
 pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
+    let seed = app.radio_seed(id).cloned();
     let Some(page) = app.radio_pages.remove(id) else {
         app.ensure_loaded(Page::Radio(id.to_owned()));
         return;
     };
     let palette = app.palette;
-    let seed = page
-        .station
-        .get()
-        .map(|station| &station.seed)
-        .or_else(|| app.track_cache.get(id))
-        .cloned();
     let title = seed
         .as_ref()
         .map(|track| format!("{} Radio", track.name))
         .unwrap_or_else(|| "Song radio".into());
+    let image = seed
+        .as_ref()
+        .and_then(|track| seed_image(ui.ctx(), app.backend.art(), track));
     collection::hero(
         app,
         ui,
         Hero {
-            image: seed.as_ref().and_then(|track| track.image(300)),
+            image,
             liked: false,
             kind: "Song radio",
             title: &title,
@@ -140,4 +140,33 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
         _ => widgets::loading_row(ui, &palette),
     }
     app.radio_pages.insert(id.to_owned(), page);
+}
+
+fn seed_image<'a>(
+    ctx: &egui::Context,
+    art: &crate::images::ArtLoader,
+    track: &'a Track,
+) -> Option<&'a str> {
+    let images = &track.album.as_ref()?.images;
+    let preferred = pick_image(images, 300)?;
+    let ready = |url: &str| {
+        matches!(
+            egui::Image::new(url).load_for_size(ctx, egui::Vec2::splat(300.0)),
+            Ok(egui::load::TexturePoll::Ready { .. })
+        )
+    };
+    if ready(preferred) {
+        return Some(preferred);
+    }
+    // These are the app's two byte sources: downloaded and embedded artwork.
+    // Check their caches without fetching unused cover sizes.
+    images
+        .iter()
+        .map(|image| image.url.as_str())
+        .find(|url| {
+            *url != preferred
+                && (art.is_ready(url) || ctx.loaders().include.load(ctx, url).is_ok())
+                && ready(url)
+        })
+        .or(Some(preferred))
 }

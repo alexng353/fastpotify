@@ -80,11 +80,7 @@ fn page_tint(app: &mut App) -> Option<Color32> {
             .and_then(|album| pick_image(&album.images, 300))
             .map(str::to_string),
         Page::Radio(id) => app
-            .radio_pages
-            .get(id)
-            .and_then(|page| page.station.get())
-            .map(|station| &station.seed)
-            .or_else(|| app.track_cache.get(id))
+            .radio_seed(id)
             .and_then(|seed| seed.image(300))
             .map(str::to_string),
         Page::Artist(id) => app
@@ -433,8 +429,60 @@ fn toasts(app: &mut App, ctx: &egui::Context, bottom_offset: f32) {
 }
 
 #[cfg(test)]
-mod window_chrome_tests {
+mod tests {
     use super::*;
+
+    #[test]
+    fn radio_tint_uses_selected_art_while_recommendations_load() {
+        let root =
+            std::env::temp_dir().join(format!("fastpotify-radio-tint-{}", std::process::id()));
+        let mut app = App::new(
+            &crate::backend::Waker::default(),
+            crate::paths::AppDirs {
+                config: root.join("config"),
+                state: root.join("state"),
+                cache: root.join("cache"),
+            },
+            crate::settings::Settings {
+                accent_from_art: true,
+                ..Default::default()
+            },
+            crate::app::AppOptions {
+                media_controls: false,
+                tray: false,
+            },
+        );
+        app.backend.set_offline(true);
+        app.auth = AuthStatus::Connected {
+            username: "test".into(),
+        };
+        let track = crate::api::models::Track {
+            uri: "spotify:track:seed".into(),
+            album: Some(crate::api::models::Album {
+                images: vec![crate::api::models::Image {
+                    url: "bytes://seed-cover".into(),
+                    width: Some(300),
+                    height: Some(300),
+                }],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        app.accents.insert(
+            "bytes://seed-cover".into(),
+            Color32::from_rgb(100, 150, 200),
+        );
+        app.open(Page::Radio("seed".into()));
+        app.radio_pages.get_mut("seed").unwrap().seed = Some(track);
+        assert!(app.track_cache.is_empty());
+        assert!(matches!(
+            app.radio_pages["seed"].station,
+            crate::model::Loadable::Loading
+        ));
+        assert_eq!(page_tint(&mut app), Some(Color32::from_rgb(100, 150, 200)));
+        drop(app);
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     #[test]
     fn chrome_visibility_matches_window_state() {

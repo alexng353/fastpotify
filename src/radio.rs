@@ -16,6 +16,8 @@ pub struct Station {
 
 #[derive(Default)]
 pub struct RadioPage {
+    /// Keep the header independent of recommendation requests and cache eviction.
+    pub seed: Option<Track>,
     pub station: Loadable<Station>,
     pub generation: u64,
 }

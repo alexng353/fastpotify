@@ -547,6 +547,7 @@ impl<T> CursorList<T> {
 
 #[derive(Default)]
 pub struct Library {
+    pub playlists_pending: Option<Vec<Playlist>>,
     pub playlists: Loadable<Vec<Playlist>>,
     pub playlists_next: Option<u32>,
     pub liked: PagedList<SavedTrack>,

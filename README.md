@@ -56,6 +56,8 @@ AUR and Homebrew packages now use the Spotifast name. See [rename compatibility]
   the placement survives restarts.
   With local playback enabled, releases that the Web API groups as singles
   are labelled EP when librespot confirms that type.
+  The sidebar restores the last complete playlist library for your account
+  while refreshing it in the background. Failed refreshes keep the saved list.
   Liked Songs reopens from an account-specific metadata cache. Older rows
   refresh in the background while Like and Unlike take effect immediately.
   Right-click album, artist, and podcast cards for their actions (available since 0.8.0).

@@ -232,6 +232,27 @@ impl Inner {
     }
 
     async fn fetch(self: &Arc<Self>, url: &str) -> Result<Arc<[u8]>, String> {
+        // The cache key identifies an image without logging signed URL queries.
+        let mut timing = crate::profiling::LoadTimer::new(
+            "artwork",
+            format!(
+                "key={:?}",
+                self.cache_path(url).file_name().unwrap_or_default()
+            ),
+        );
+        let mut source = "memory";
+        let result = self.fetch_bytes(url, &mut source).await;
+        timing.result(&result, |bytes| {
+            format!("source={source} bytes={}", bytes.len())
+        });
+        result
+    }
+
+    async fn fetch_bytes(
+        self: &Arc<Self>,
+        url: &str,
+        source: &mut &'static str,
+    ) -> Result<Arc<[u8]>, String> {
         if let Some(Entry::Ready {
             bytes: Some(bytes), ..
         }) = self
@@ -242,6 +263,7 @@ impl Inner {
         {
             return Ok(Arc::clone(bytes));
         }
+        *source = "disk";
         let path = self.cache_path(url);
         let cached = tokio::task::spawn_blocking({
             let path = path.clone();
@@ -253,6 +275,7 @@ impl Inner {
         let bytes: Vec<u8> = match cached {
             Some(bytes) if !bytes.is_empty() => bytes,
             _ => {
+                *source = "network";
                 let response = self
                     .http
                     .get(url)

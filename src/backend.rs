@@ -26,6 +26,9 @@ use crate::model::PlaylistCache;
 use crate::paths::AppDirs;
 use crate::player::{Engine, EngineConfig, EngineEvent, LoadSpec, LocalState, PlayerCommand};
 
+mod profiling;
+use crate::profiling::LoadTimer;
+
 pub type ApiResult<T> = Result<T, ApiError>;
 
 const PREMIUM_NEEDED: &str = "Local playback needs Spotify Premium.";
@@ -1134,8 +1137,24 @@ impl Worker {
                         let path = self.dirs.liked_songs_cache_file(&account_id);
                         let events = self.events.clone();
                         let waker = self.waker.clone();
+                        let mut timing = LoadTimer::new(
+                            "liked songs cache",
+                            format!("source=disk generation={generation}"),
+                        );
                         tokio::spawn(async move {
                             let cache = crate::liked::read(&path, &account_id).await;
+                            timing.finish(
+                                if cache.is_some() {
+                                    "Loaded"
+                                } else {
+                                    "Load missed"
+                                },
+                                if cache.is_some() {
+                                    "cache=hit"
+                                } else {
+                                    "cache=miss_or_invalid"
+                                },
+                            );
                             let _ = events.send(Event::LikedSongsCache {
                                 account_id,
                                 generation,
@@ -1789,10 +1808,12 @@ impl Worker {
         let events = self.events.clone();
         let commands = self.commands.clone();
         let waker = self.waker.clone();
+        let mut timing = LoadTimer::new("playback connection", "source=librespot");
         tokio::spawn(async move {
             let cache = match config.open_cache() {
                 Ok(cache) => cache,
                 Err(error) => {
+                    timing.finish("Load failed", "error=cache_open");
                     let _ = commands.send(Command::EngineConnected {
                         lease: lease.clone(),
                         engine: Box::new(None),
@@ -1806,6 +1827,18 @@ impl Worker {
                 Engine::connect(&config, credentials, cache, notify),
             )
             .await;
+            timing.finish(
+                if matches!(&attempt, Ok(Ok(_))) {
+                    "Loaded"
+                } else {
+                    "Load failed"
+                },
+                if attempt.is_err() {
+                    "error=timeout"
+                } else {
+                    "stage=connect"
+                },
+            );
             let outcome = match attempt {
                 Ok(Ok(engine)) => Command::EngineConnected {
                     lease: lease.clone(),
@@ -1900,15 +1933,20 @@ impl Worker {
     fn discover_receivers(&self) {
         let events = self.events.clone();
         let waker = self.waker.clone();
+        let mut timing = LoadTimer::new("local receivers", "source=zeroconf browse_ms=3000");
         tokio::task::spawn_blocking(move || {
             match crate::zeroconf::discover(std::time::Duration::from_secs(3))
                 .and_then(crate::zeroconf::resolve_receivers)
             {
                 Ok(receivers) => {
+                    timing.finish("Loaded", format!("items={}", receivers.len()));
                     let _ = events.send(Event::Receivers(receivers));
                     waker.wake();
                 }
-                Err(error) => log::debug!("no receivers found on the network: {error}"),
+                Err(error) => {
+                    timing.finish("Load failed", "error=discovery");
+                    log::debug!("no receivers found on the network: {error}");
+                }
             }
         });
     }
@@ -1954,10 +1992,14 @@ impl Worker {
         let http = self.http.clone();
         let events = self.events.clone();
         let waker = self.waker.clone();
+        let mut timing = LoadTimer::new("update check", format!("manual={manual}"));
         tokio::spawn(async move {
             let result = crate::updates::newer_release(&http)
                 .await
                 .map_err(|error| format!("{error:#}"));
+            timing.result(&result, |release| {
+                format!("update_available={}", release.is_some())
+            });
             let _ = events.send(Event::UpdateChecked { manual, result });
             waker.wake();
         });
@@ -2007,20 +2049,33 @@ impl Worker {
         };
         let events = self.events.clone();
         let waker = self.waker.clone();
+        let mut timing = LoadTimer::new("playlist tree", "source=librespot");
         tokio::spawn(async move {
             let result = engine
                 .rootlist()
                 .await
                 .map_err(|error| format!("{error:#}"));
+            timing.result(&result, |tree| {
+                format!(
+                    "items={} editable={}",
+                    tree.entries.len(),
+                    tree.editable.len()
+                )
+            });
             let _ = events.send(Event::Rootlist { result });
             waker.wake();
         });
     }
 
     fn fetch_radio(&self, id: String, generation: u64) {
+        let mut timing = LoadTimer::new(
+            "radio",
+            format!("source=librespot id={id:?} generation={generation}"),
+        );
         let Some(engine) = self.engine.clone() else {
             // Report this before a later EngineConnected command emits Ready,
             // so the restored page is already failed when the UI retries it.
+            timing.finish("Load failed", "error=playback_not_ready");
             self.emit(Event::Radio {
                 id,
                 generation,
@@ -2036,6 +2091,18 @@ impl Worker {
                     Ok(result) => result.map_err(|error| format!("{error:#}")),
                     Err(_) => Err("Spotify took too long to load this radio. Try again.".into()),
                 };
+            timing.result(&result, |station| {
+                format!(
+                    "seed={:?} items={} seed_index={:?} first_track={:?}",
+                    station.seed.name,
+                    station.tracks.len(),
+                    station
+                        .tracks
+                        .iter()
+                        .position(|t| t.uri == station.seed.uri),
+                    station.tracks.first().map(|t| t.name.as_str())
+                )
+            });
             let _ = events.send(Event::Radio {
                 id,
                 generation,
@@ -2051,6 +2118,7 @@ impl Worker {
         let waker = self.waker.clone();
         let cache_dir = self.dirs.lyrics_cache_dir();
         let engine = self.engine.clone();
+        let mut timing = LoadTimer::new("lyrics", format!("uri={:?}", request.uri));
         tokio::spawn(async move {
             // Spotify's own words go first: they follow the recording
             // exactly. Everything else, a signed-out session included,
@@ -2061,6 +2129,13 @@ impl Worker {
                     .await
                     .map_err(|error| format!("{error:#}")),
             };
+            timing.result(&result, |found| {
+                format!(
+                    "found={} lines={}",
+                    found.is_some(),
+                    found.as_ref().map_or(0, |l| l.lines.len())
+                )
+            });
             let _ = events.send(Event::Lyrics {
                 uri: request.uri,
                 result,
@@ -2082,6 +2157,10 @@ impl Worker {
             .account_playlist_cache_dir(account.as_str())
             .join(format!("{id}.json"));
         let account_id = account.as_str().to_string();
+        let mut timing = LoadTimer::new(
+            "playlist cache",
+            format!("source=disk id={id:?} generation={generation}"),
+        );
         tokio::spawn(async move {
             let cache = tokio::fs::read_to_string(&path)
                 .await
@@ -2103,6 +2182,17 @@ impl Worker {
                         next_offset: cached.next_offset,
                     })
                 });
+            match &cache {
+                Some(cache) => timing.finish(
+                    "Loaded",
+                    format!(
+                        "cache=hit items={} total={}",
+                        cache.items.len(),
+                        cache.total
+                    ),
+                ),
+                None => timing.finish("Load missed", "cache=miss_or_invalid"),
+            }
             let _ = events.send(Event::PlaylistCache {
                 account_id,
                 id,
@@ -2149,7 +2239,17 @@ impl Worker {
         let waker = self.waker.clone();
         tokio::spawn(async move {
             for id in ids {
+                let mut timing =
+                    LoadTimer::new("user display name", format!("source=librespot id={id:?}"));
                 let name = engine.user_display_name(&id).await;
+                timing.finish(
+                    if name.is_some() {
+                        "Loaded"
+                    } else {
+                        "Load missed"
+                    },
+                    format!("found={}", name.is_some()),
+                );
                 let _ = events.send(Event::UserName { id, name });
                 waker.wake();
             }
@@ -2164,6 +2264,7 @@ impl Worker {
         let personal_lease = self.credentials.lease(CredentialSlot::Personal);
         let background_api = Arc::clone(&self.background_api);
         let background = request.background();
+        let mut timing = profiling::start(&request);
         let commands = self.commands.clone();
         let mut session = self.session.subscribe();
         let generation = *session.borrow_and_update();
@@ -2176,7 +2277,8 @@ impl Worker {
                     } else {
                         None
                     };
-                    handle(&api, request).await
+                    if let Some(timer) = &mut timing { timer.begin_work(); }
+                    handle(&api, request, timing).await
                 } => result,
             };
             // Apply completion on the command loop. A late response cannot
@@ -2339,7 +2441,11 @@ fn observe_playlists(api: &ApiGateway, response: &ApiResponse) {
     }
 }
 
-async fn handle(api: &ApiGateway, request: ApiRequest) -> (ApiResponse, Option<ApiSource>) {
+async fn handle(
+    api: &ApiGateway,
+    request: ApiRequest,
+    mut timing: Option<LoadTimer>,
+) -> (ApiResponse, Option<ApiSource>) {
     let selected = api.client_for(operation_for(api, &request)).await;
     let expired = std::cell::Cell::new(None);
     macro_rules! routed {
@@ -2656,6 +2762,9 @@ async fn handle(api: &ApiGateway, request: ApiRequest) -> (ApiResponse, Option<A
         },
     };
     observe_playlists(api, &response);
+    if let Some(timer) = &mut timing {
+        profiling::finish(timer, &response);
+    }
     (response, expired.get())
 }
 
@@ -3208,4 +3317,149 @@ fn playback_account_matches(credentials: &Credentials, account: Option<AccountId
                 .as_ref()
                 .is_some_and(|account| account.as_str() == name)
         })
+}
+
+#[cfg(test)]
+mod load_timing_tests {
+    use super::*;
+
+    struct Capture(std::sync::Mutex<Vec<String>>);
+    static LOG: Capture = Capture(std::sync::Mutex::new(Vec::new()));
+    impl log::Log for Capture {
+        fn enabled(&self, _: &log::Metadata<'_>) -> bool {
+            true
+        }
+        fn log(&self, record: &log::Record<'_>) {
+            if record.target() == "fastpotify::loads" {
+                self.0
+                    .lock()
+                    .unwrap()
+                    .push(format!("{} {}", record.level(), record.args()));
+            }
+        }
+        fn flush(&self) {}
+    }
+
+    #[tokio::test]
+    async fn failed_search_logs_timing_at_info_without_response_contents() {
+        log::set_logger(&LOG).unwrap();
+        log::set_max_level(log::LevelFilter::Info);
+        let api = ApiGateway::new(reqwest::Client::new(), Arc::new(NetActivity::default()));
+        let request = ApiRequest::Search {
+            query: "timing probe\nsecond line".into(),
+            serial: 918273,
+        };
+        let timing = profiling::start(&request);
+        let (response, _) = handle(&api, request, timing).await;
+        assert!(matches!(
+            response,
+            ApiResponse::Search { result: Err(_), .. }
+        ));
+        let mut success = profiling::start(&ApiRequest::Search {
+            query: "timing success".into(),
+            serial: 918274,
+        })
+        .unwrap();
+        tokio::time::sleep(Duration::from_millis(2)).await;
+        success.begin_work();
+        profiling::finish(
+            &mut success,
+            &ApiResponse::Search {
+                query: "timing success".into(),
+                serial: 918274,
+                result: Ok(SearchResults {
+                    tracks: Some(Page {
+                        items: vec![Track::default(); 3],
+                        total: 30,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }),
+            },
+        );
+        drop(success);
+        let mut page = profiling::start(&ApiRequest::PlaylistItems {
+            id: "timing-playlist".into(),
+            offset: 50,
+            generation: 7,
+        })
+        .unwrap();
+        profiling::finish(
+            &mut page,
+            &ApiResponse::PlaylistItems {
+                id: "timing-playlist".into(),
+                offset: 50,
+                generation: 7,
+                result: Ok(Page {
+                    items: vec![PlaylistItem::default(); 2],
+                    offset: 50,
+                    total: 52,
+                    ..Default::default()
+                }),
+            },
+        );
+        drop(page);
+        drop(profiling::start(&ApiRequest::Search {
+            query: "timing cancelled".into(),
+            serial: 918275,
+        }));
+        let mut failure = profiling::start(&ApiRequest::Search {
+            query: "timing failure".into(),
+            serial: 918276,
+        })
+        .unwrap();
+        profiling::finish(
+            &mut failure,
+            &ApiResponse::Search {
+                query: "timing failure".into(),
+                serial: 918276,
+                result: Err(ApiError::Status {
+                    status: 503,
+                    message: "DO_NOT_LOG_RESPONSE_BODY".into(),
+                }),
+            },
+        );
+        drop(failure);
+        let lines = LOG.0.lock().unwrap();
+        let line = lines
+            .iter()
+            .find(|line| line.contains("918273"))
+            .expect("a failed search must emit an info-level timing record");
+        assert!(line.starts_with("INFO Load failed search"), "{line}");
+        assert!(line.contains("elapsed_ms="), "{line}");
+        assert!(line.contains("error=not_signed_in"), "{line}");
+        assert!(line.contains("timing probe\\nsecond line"), "{line}");
+        assert!(!line.contains('\n'), "queries must not inject log lines");
+        let successes: Vec<_> = lines.iter().filter(|l| l.contains("918274")).collect();
+        assert_eq!(
+            successes.len(),
+            1,
+            "completion must not also log cancellation"
+        );
+        assert!(successes[0].starts_with("INFO Loaded search"));
+        assert!(successes[0].contains("tracks=3 artists=0"));
+        let queue_ms: f64 = successes[0]
+            .split("queue_ms=")
+            .nth(1)
+            .unwrap()
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(queue_ms >= 2.0, "background queue time must be measured");
+        assert!(lines.iter().any(|l| l.contains("timing-playlist")
+            && l.contains("items=2 total=52 offset=50 has_next=false")));
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.starts_with("INFO Load cancelled search") && l.contains("918275"))
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("918276") && l.contains("error=http http_status=Some(503)"))
+        );
+        assert!(!lines.iter().any(|l| l.contains("DO_NOT_LOG_RESPONSE_BODY")));
+    }
 }

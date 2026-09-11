@@ -209,6 +209,43 @@ Attach `fastpotify.log` from the state directory to bug reports. It contains
 the last run's output, including extra lines from `fastpotify -v`. After a
 crash, attach `panic.log` too.
 
+### Load timings
+
+Normal and optimized builds write `INFO fastpotify::loads` completion lines
+without `--verbose`. Each line includes the operation, `elapsed_ms`, request
+context, and the outcome. For example (illustrative values):
+
+```text
+Loaded search elapsed_ms=184.327 source=api request=Search { query: "the one that got away", serial: 12 } queue_ms=0.041 tracks=20 artists=0 albums=20 playlists=20 shows=0 episodes=0
+Loaded playlist items elapsed_ms=72.105 source=api request=PlaylistItems { id: "playlist-id", offset: 50, generation: 3 } queue_ms=0.025 items=50 total=213 offset=50 has_next=true
+```
+
+API timings run from backend dispatch until the parsed response is ready,
+including background queue waits (`queue_ms`), grant verification waits,
+rate-limit backoff, and retries. They do not include search debounce, UI
+command-channel delay, drawing, or separate artwork loads. Each page has its
+own timing; this is not a whole-playlist download or first-frame measurement.
+Routine playback-state and queue polling are excluded.
+
+Other timed loads include the playlist tree, radio, lyrics, playlist and
+Liked Songs disk caches, artwork, user display names, update checks, playback
+connection, and audio loading. Artwork reports memory/disk/network source and
+byte count using its cache key instead of the URL. Local receiver discovery
+also reports its elapsed time and receiver count. Audio timing runs from the
+player's Loading event to Playing or Paused; background audio preloading has
+no completion event and is not reported as a finished load. Radio logs include
+the first returned track and the seed's zero-based position (`None` if absent).
+A disk-cache miss or invalid entry says `Load missed`; errors say `Load failed`;
+dropped in-flight operations say `Load cancelled`. API errors include a category
+and HTTP status when available, without logging response bodies.
+
+These local logs include search queries, resource IDs, and names. Strings are
+quoted so a query cannot inject another log line. To show only load timings,
+launch with `RUST_LOG=warn,fastpotify::loads=info`; to hide them while retaining
+other normal Fastpotify logs, use
+`RUST_LOG=warn,fastpotify=info,fastpotify::loads=off`.
+
+
 ## Demo mode
 
 Builds made with `cargo build --features demo` accept `--demo`, which loads

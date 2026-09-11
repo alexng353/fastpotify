@@ -711,18 +711,62 @@ async fn run_events(
     audio: Arc<AudioControl>,
 ) {
     let mut play_request_id = None;
+    let mut load: Option<crate::profiling::LoadTimer> = None;
     while let Some(event) = events.recv().await {
         if let PlayerEvent::PlayRequestIdChanged {
             play_request_id: next,
         } = &event
         {
             play_request_id = Some(*next);
+            load = None;
             continue;
         }
         if let (Some(current), Some(incoming)) = (play_request_id, event.get_play_request_id())
             && current != incoming
         {
             continue;
+        }
+        match &event {
+            PlayerEvent::Loading {
+                track_id,
+                play_request_id,
+                position_ms,
+            } => {
+                load = Some(crate::profiling::LoadTimer::new(
+                    "audio",
+                    format!(
+                        "track={track_id:?} play_request_id={play_request_id} position_ms={position_ms}"
+                    ),
+                ));
+            }
+            PlayerEvent::Playing { .. } | PlayerEvent::Paused { .. } => {
+                if let Some(mut timer) = load.take() {
+                    timer.finish(
+                        "Loaded",
+                        if matches!(event, PlayerEvent::Playing { .. }) {
+                            "state=playing"
+                        } else {
+                            "state=paused"
+                        },
+                    );
+                }
+            }
+            PlayerEvent::Unavailable { .. } | PlayerEvent::AudioKeyUnavailable { .. } => {
+                if let Some(mut timer) = load.take() {
+                    timer.finish(
+                        "Load failed",
+                        if matches!(event, PlayerEvent::AudioKeyUnavailable { .. }) {
+                            "error=audio_key_unavailable"
+                        } else {
+                            "error=unavailable"
+                        },
+                    );
+                }
+            }
+            PlayerEvent::Stopped { .. } => {
+                load = None;
+            }
+            _ => {}
         }
         match &event {
             PlayerEvent::TrackChanged { .. } | PlayerEvent::Seeked { .. } => {

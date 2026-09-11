@@ -23,7 +23,7 @@ use crate::model::QueueTab;
 use crate::model::*;
 use crate::paths::AppDirs;
 use crate::player::{EngineConfig, LoadSpec, LocalState, Playback, PlayerCommand, RepeatMode};
-use crate::settings::{CachedRootlist, SessionState, Settings, ThemeChoice};
+use crate::settings::{CachedLibrary, CachedRootlist, SessionState, Settings, ThemeChoice};
 use crate::single_instance::ControlCommand;
 use crate::theme::{self, Palette};
 use crate::tray::{TrayCommand, TrayService};
@@ -420,6 +420,7 @@ pub struct App {
     pub rootlist: Vec<crate::player::RootlistEntry>,
     /// Last good tree and the account it belongs to, kept across restarts.
     rootlist_cache: Option<CachedRootlist>,
+    library_cache: Option<CachedLibrary>,
     /// Playlists the account may add songs to by Spotify's own word, by
     /// URI: the ones shared with it by invitation, which the Web API's
     /// collaborative flag does not show. Empty until the session answers.
@@ -675,6 +676,7 @@ impl App {
             pending_queue_adds: Vec::new(),
             rootlist: Vec::new(),
             rootlist_cache: session.rootlist.clone(),
+            library_cache: session.library.clone(),
             editable_by_grant: std::collections::BTreeSet::new(),
             pending_link: None,
             collapsed_folders: session.collapsed_folders.clone(),
@@ -1433,6 +1435,7 @@ impl App {
                 self.remote = None;
                 self.rootlist.clear();
                 self.rootlist_cache = None;
+                self.library_cache = None;
                 self.editable_by_grant.clear();
                 self.session_dirty = true;
                 self.reset_data();
@@ -2663,10 +2666,13 @@ impl App {
     // ---- loading ---------------------------------------------------------------
 
     fn load_playlists(&mut self) {
-        if self.library.playlists.is_loading() {
+        if self.library.playlists_pending.is_some() {
             return;
         }
-        self.library.playlists = Loadable::Loading;
+        self.library.playlists_pending = Some(Vec::new());
+        if self.library.playlists.get().is_none() {
+            self.library.playlists = Loadable::Loading;
+        }
         self.library.playlists_next = None;
         self.backend.api(ApiRequest::MyPlaylists { offset: 0 });
     }
@@ -3560,6 +3566,22 @@ impl App {
                             .unwrap_or_default();
                         self.editable_by_grant.clear();
                     }
+                    if self.library.playlists.get().is_none()
+                        && let Some(cache) = self
+                            .library_cache
+                            .as_ref()
+                            .filter(|cache| cache.account_id == user.id)
+                    {
+                        let mut timing = crate::profiling::LoadTimer::new(
+                            "playlist library cache",
+                            "source=session",
+                        );
+                        self.library.playlists = Loadable::Loaded(cache.playlists.clone());
+                        timing.finish(
+                            "Loaded",
+                            format!("cache=hit items={}", cache.playlists.len()),
+                        );
+                    }
                     self.user = Some(user);
                     let page = self.page().clone();
                     self.ensure_loaded(page);
@@ -3877,15 +3899,24 @@ impl App {
             ApiResponse::MyPlaylists { offset, result } => match result {
                 Ok(page) => {
                     let next_offset = page.next_offset();
-                    match &mut self.library.playlists {
-                        Loadable::Loaded(existing) if offset > 0 => existing.extend(page.items),
-                        slot => *slot = Loadable::Loaded(page.items),
+                    let pending = self.library.playlists_pending.get_or_insert_with(Vec::new);
+                    if offset == 0 {
+                        pending.clear();
                     }
+                    pending.extend(page.items);
                     self.library.playlists_next = next_offset;
                     if next_offset.is_some() {
                         self.load_more(Page::Home);
                     } else {
-                        // Load folder order after all playlists arrive.
+                        let playlists = self.library.playlists_pending.take().unwrap_or_default();
+                        if let Some(account_id) = self.user_id().map(str::to_owned) {
+                            self.library_cache = Some(CachedLibrary {
+                                account_id,
+                                playlists: playlists.clone(),
+                            });
+                            self.session_dirty = true;
+                        }
+                        self.library.playlists = Loadable::Loaded(playlists);
                         self.backend.send(Command::Rootlist);
                     }
                     if let Some(playlists) = self.library.playlists.get() {
@@ -3895,7 +3926,9 @@ impl App {
                     }
                 }
                 Err(error) => {
-                    if offset == 0 {
+                    self.library.playlists_pending = None;
+                    self.library.playlists_next = None;
+                    if self.library.playlists.get().is_none() {
                         self.library.playlists = Loadable::Failed(error.to_string());
                     } else {
                         self.toast_error(format!("Couldn't load more playlists: {error}"));
@@ -7127,6 +7160,7 @@ impl App {
                 last_position_ms: self.resume_position_ms,
                 collapsed_folders: self.collapsed_folders.clone(),
                 rootlist: self.rootlist_cache.clone(),
+                library: self.library_cache.clone(),
                 last_added_queue: if self.resume_queue.is_empty() {
                     self.manual_queue.clone()
                 } else {
@@ -12306,6 +12340,80 @@ mod tests {
             .map(|(id, _)| id)
             .collect();
         assert_eq!(editable, ["shared", "mine"]);
+    }
+
+    #[test]
+    fn playlist_library_cache_survives_restart_refresh_and_failure() {
+        let mut app = test_app("library-cache");
+        app.user = Some(User {
+            id: "listener".into(),
+            ..Default::default()
+        });
+        let playlist = |id: &str| Playlist {
+            id: id.into(),
+            uri: format!("spotify:playlist:{id}"),
+            ..Default::default()
+        };
+        let response = |offset, ids: &[&str], next: Option<&str>| ApiResponse::MyPlaylists {
+            offset,
+            result: Ok(crate::api::models::Page {
+                items: ids.iter().map(|id| playlist(id)).collect(),
+                offset,
+                limit: 1,
+                total: 2,
+                next: next.map(str::to_owned),
+            }),
+        };
+        app.handle_api(response(0, &["old"], None));
+        app.save_session();
+        let dirs = app.dirs.clone();
+        drop(app);
+        let mut app = App::new(
+            &Waker::default(),
+            dirs,
+            Settings::default(),
+            AppOptions {
+                media_controls: false,
+                restore_sign_in: false,
+                tray: false,
+            },
+        );
+        assert!(app.library.playlists.get().is_none());
+        app.handle_auth(AuthStatus::Connected {
+            username: "listener".into(),
+        });
+        app.handle_api(ApiResponse::Me(Ok(User {
+            id: "listener".into(),
+            ..Default::default()
+        })));
+        assert_eq!(app.library.playlists.get().unwrap(), &[playlist("old")]);
+        app.handle_api(response(0, &["new"], Some("next")));
+        assert_eq!(app.library.playlists.get().unwrap(), &[playlist("old")]);
+        assert_eq!(
+            app.library_cache.as_ref().unwrap().playlists,
+            vec![playlist("old")]
+        );
+        app.handle_api(ApiResponse::MyPlaylists {
+            offset: 1,
+            result: Err(crate::api::ApiError::RateLimited),
+        });
+        assert_eq!(app.library.playlists.get().unwrap(), &[playlist("old")]);
+        app.load_playlists();
+        app.handle_api(response(0, &["new"], Some("next")));
+        app.handle_api(response(1, &["second"], None));
+        assert_eq!(
+            app.library.playlists.get().unwrap(),
+            &[playlist("new"), playlist("second")]
+        );
+        assert_eq!(app.library_cache.as_ref().unwrap().playlists.len(), 2);
+        app.reset_data();
+        app.handle_api(ApiResponse::Me(Ok(User {
+            id: "other".into(),
+            ..Default::default()
+        })));
+        assert!(app.library.playlists.get().is_none());
+        app.handle_auth(AuthStatus::SignedOut);
+        assert!(app.library_cache.is_none());
     }
 
     /// Folder order survives a restart, but only for the account that

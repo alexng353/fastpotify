@@ -36,6 +36,8 @@ everyday use, and connection details.
   available. Follow Spotify’s playlist order or keep a separate local arrangement.
   Move Liked Songs among your pins or unpin it and choose its local position;
   the placement survives restarts.
+  The sidebar restores the last complete playlist library for your account
+  while refreshing it in the background. Failed refreshes keep the saved list.
   Liked Songs reopens from an account-specific metadata cache. Older rows
   refresh in the background while Like and Unlike take effect immediately.
   Right-click album, artist, and podcast cards for their actions (on `main`,

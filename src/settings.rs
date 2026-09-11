@@ -467,6 +467,13 @@ pub struct CachedRootlist {
     pub entries: Vec<crate::player::RootlistEntry>,
 }
 
+/// Last complete playlist library, scoped to its verified account.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CachedLibrary {
+    pub account_id: String,
+    pub playlists: Vec<crate::api::models::Playlist>,
+}
+
 /// Restorable UI session: what was open when the app last closed.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -491,6 +498,8 @@ pub struct SessionState {
     /// Last good playlist tree, scoped to the account that supplied it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rootlist: Option<CachedRootlist>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub library: Option<CachedLibrary>,
     /// Shuffle mode saved across contexts and restarts.
     pub shuffle_on: bool,
     /// Each table's chosen sort, by encoded page, restored at start.

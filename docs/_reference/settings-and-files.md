@@ -94,6 +94,13 @@ Like and Unlike change the rows immediately, and confirmed edits survive a
 restart even if Spotify's next read still reports the old state. This cache
 contains metadata, not offline audio, and can be deleted without signing out.
 
+The last complete sidebar playlist library is saved in `session.json` for its
+verified account. It appears after sign-in while Spotify refreshes in the
+background. Paginated refreshes replace it only after every page succeeds;
+failed refreshes keep the previous library. Signing out clears this snapshot.
+This saves playlist metadata, not playlist tracks or offline audio. Cache
+restoration and network loads produce INFO timing logs in optimized builds.
+
 The last good playlist folder tree is kept in `session.json`, scoped to the
 account that supplied it. This keeps folders visible when local playback is
 temporarily unavailable. Live session data is still required for edit grants.

@@ -136,7 +136,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
         Loadable::Failed(error) => {
             widgets::error_row(ui, app, error, Some(Page::Radio(id.to_owned())))
         }
-        _ => widgets::loading_row(ui, &palette),
+        _ => widgets::loading_row(ui, &palette, app.locale),
     }
     app.radio_pages.insert(id.to_owned(), page);
 }

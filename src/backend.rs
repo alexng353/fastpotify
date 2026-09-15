@@ -2542,14 +2542,14 @@ impl Worker {
     ) {
         if !self.signed_in || session_generation != self.album_type_lookup.session_generation {
             if let Some(engine) = engine {
-                engine.shutdown();
+                self.retire_engine(engine);
             }
             return;
         }
         self.engine_busy = false;
         if std::mem::take(&mut self.engine_restart_pending) {
             if let Some(engine) = engine {
-                engine.shutdown();
+                self.retire_engine(engine);
             }
             // Keep `resume`: it belongs to the engine which was replaced,
             // not to this stale attempt. The newest config is already stored.
@@ -3240,6 +3240,9 @@ async fn handle(
     {
         log::debug!("Spotify route operation={operation:?} source=session");
         observe_playlists(api, &response);
+        if let Some(timer) = &mut timing {
+            profiling::finish(timer, &response);
+        }
         return (response, None);
     }
     let selected = api.client_for(operation).await;
@@ -3937,11 +3940,12 @@ mod radio_tests {
             crate::app::engine_config(
                 &dirs,
                 &crate::settings::Settings::default(),
+                ProxyConfig::default(),
                 Arc::default(),
                 Arc::default(),
             ),
             None,
-            http,
+            http.into(),
             art,
             Arc::default(),
             events,
@@ -5200,7 +5204,7 @@ mod load_timing_tests {
             serial: 918273,
         };
         let timing = profiling::start(&request);
-        let (response, _) = handle(&api, request, timing).await;
+        let (response, _) = handle(&api, None, request, timing).await;
         assert!(matches!(
             response,
             ApiResponse::Search { result: Err(_), .. }

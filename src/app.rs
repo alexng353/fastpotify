@@ -17399,7 +17399,7 @@ mod tests {
 
         // #when
         app.actions
-            .push(Action::OpenLink("spotify:station:track:t1".into()));
+            .push(Action::OpenLink("spotify:station:artist:a1".into()));
         app.apply_actions(&ctx);
 
         // #then

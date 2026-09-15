@@ -479,6 +479,12 @@ after the radio with the songs on the page.
 Radio comes from Spotify's playback service, so it needs playback on this
 computer to be set up; the page can then play on any device.
 
+In this personal build, **Go to song radio** browses Spotify's radio playlist
+without changing playback, and **Start song radio** plays it immediately.
+The song's name, artist, and available cover stay visible while radio loads.
+The radio page starts with that song, then Spotify's recommendations.
+Browsing uses the local playback sign-in; it does not activate this device.
+
 ## Playlist covers
 
 **In development, not included in 0.8.0:** open a playlist you own and choose

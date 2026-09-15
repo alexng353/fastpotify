@@ -70,6 +70,9 @@ clients. Spotifast uses its session for:
   by a song, playlist, album, or artist. Each resolution is a fresh mix of 50
   songs, so a radio page plays the songs it shows rather than asking again.
 - **Audiobook detection** for saved shows, which the Web API lists as podcasts.
+- **Song radio:** the personal `alex` branch uses Spotify’s internal
+  `inspiredby-mix` endpoint to find the radio playlist, then reads it through
+  librespot. Autoplay uses Spotify’s context resolver.
 
 ## librespot playback
 

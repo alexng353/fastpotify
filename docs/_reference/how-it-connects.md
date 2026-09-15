@@ -225,8 +225,11 @@ uses the Web API for subsequent control requests.
 
 ## The engine
 
-Song-radio pages resolve a station and read its track metadata through the
-existing librespot session. Browsing does not load audio, activate Spotify
+On the personal `alex` branch, song-radio pages resolve Spotify’s radio playlist
+through `/inspiredby-mix/v2/seed_to_playlist/{track-uri}?response-format=json`,
+then read the playlist and track metadata through the existing librespot session.
+The selected seed song comes first, followed by the playlist’s remaining songs.
+Browsing does not load audio, activate Spotify
 Connect, or replace the current queue. These requests do not use the shared
 Web API quota. Playback begins only when a play control or **Start song
 radio** is used.

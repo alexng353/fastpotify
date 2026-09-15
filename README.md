@@ -69,7 +69,7 @@ AUR and Homebrew packages now use the Spotifast name. See [rename compatibility]
 
   Since 0.8.0, the search field stays clear of the device and update
   badges in narrow windows; hover their icons to read the labels.
-- **Song radio.** Choose **Go to song radio** to browse Spotify's station
+- **Song radio.** Choose **Go to song radio** to browse Spotify's radio playlist
   without changing playback, or **Start song radio** to play it immediately.
   The song's name, artist, and available cover stay visible while radio loads.
   The radio page starts with that song, then Spotify's recommendations.

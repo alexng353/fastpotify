@@ -66,7 +66,9 @@ clients. Spotifast uses its session for:
 - **Lyrics** when Spotify has them.
 - **Display names** for the user IDs attached to songs in a playlist.
 - **Precise EP types** for releases that the Web API groups with singles.
-- **Song radio and autoplay** through Spotify's context resolver.
+- **Song radio:** the personal `alex` branch uses Spotify’s internal
+  `inspiredby-mix` endpoint to find the radio playlist, then reads it through
+  librespot. Autoplay uses Spotify’s context resolver.
 
 ## librespot playback
 

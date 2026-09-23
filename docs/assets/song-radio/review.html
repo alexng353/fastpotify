@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR 359 · Song radio browsing · visual review</title>
+<style>
+  :root { color-scheme: light dark; --bg: #f6f6f4; --fg: #1d1d1b; --muted: #6b6b66; --line: #d9d9d4; --accent: #1db954; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #151515; --fg: #ececea; --muted: #9a9a95; --line: #333; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 20px 16px 40px; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, sans-serif; }
+  main { max-width: 1280px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p { margin: 6px 0; max-width: 80ch; }
+  .muted { color: var(--muted); }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: end; margin: 16px 0 12px; }
+  label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+  select, button { font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--fg); }
+  .toggle { display: inline-flex; }
+  .toggle button { border-radius: 0; }
+  .toggle button:first-child { border-radius: 6px 0 0 6px; }
+  .toggle button:last-child { border-radius: 0 6px 6px 0; border-left: 0; }
+  .toggle button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #000; }
+  .note { min-height: 2.9em; }
+  figure { margin: 0; overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+  figure img { display: block; max-width: none; }
+  figcaption { padding: 6px 10px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); }
+  h2 { font-size: 16px; margin: 24px 0 0; }
+  ul { padding-left: 20px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>PR 359: browse song radio without interrupting playback</h1>
+  <p class="muted">Baseline: upstream main <code>a65e85c</code>. Candidate: the PR 359 commit
+    that adds these captures. Every capture was made on Linux (Arch, Xvfb/X11)
+    in demo mode, with fresh, isolated configuration and state for each capture. Demo mode makes no Spotify requests.</p>
+  <p>Before, <b>Go to song radio</b> replaced the queue and started the station at once. Now it opens the
+    station as its own page and leaves the current music and queue alone. A new <b>Start song radio</b> item
+    keeps the old immediate playback. Neither item is offered for local or unplayable songs. The radio
+    page shows the song's name, artist and cover while it loads, when it fails with a retry button, and
+    when Spotify returns an empty station.</p>
+
+  <div class="controls">
+    <label>State
+      <select id="state">
+        <option value="page">Radio page</option>
+        <option value="menu">Song menu open</option>
+        <option value="loading">Loading</option>
+        <option value="error">Error with retry</option>
+        <option value="empty">Empty station</option>
+      </select>
+    </label>
+    <label>Theme
+      <select id="theme">
+        <option value="dark">Dark</option>
+        <option value="light">Light</option>
+      </select>
+    </label>
+    <label>Window
+      <select id="size">
+        <option value="1240x800">Normal (1240×800)</option>
+        <option value="760x800">Narrow (760×800)</option>
+      </select>
+    </label>
+    <div class="toggle" role="group" aria-label="Version">
+      <button id="before" aria-pressed="false">Before</button>
+      <button id="after" aria-pressed="true">After</button>
+    </div>
+  </div>
+  <p class="note muted" id="note"></p>
+  <figure>
+    <img id="shot" alt="">
+    <figcaption id="caption"></figcaption>
+  </figure>
+
+  <h2>Remaining checks</h2>
+  <ul>
+    <li>Loading a real station while signed in: demo mode does not contact Spotify, so these captures check
+      layout only. Unit tests cover the resolver's handling of responses.</li>
+    <li>Only Linux produced these captures. The radio page reuses the shared playlist header and table, so
+      macOS and Windows are not expected to differ.</li>
+  </ul>
+  <p class="muted">Keys: <kbd>B</kbd> Before, <kbd>A</kbd> After, <kbd>Space</kbd> toggles between them.</p>
+</main>
+<script>
+  const notes = {
+    page: "Before: the playlist a song is chosen from, since there is no radio page. After: the song's radio page, opened with Go to song radio. The playback bar stays on Rosewood.",
+    menu: "The song menu on the same playlist row. Before, Go to song radio started playback. After, it opens the radio page, and Start song radio starts playback.",
+    loading: "No Before equivalent: the page is the playlist the action starts from. After: the header uses the song's details while the station loads.",
+    error: "No Before equivalent. After: a failed station keeps the header and offers Retry.",
+    empty: "No Before equivalent. After: the resolver treats a station with no songs as a retryable error.",
+  };
+  // Before has no radio states, so it shows the page where the action starts.
+  const beforeState = { page: "page", menu: "menu", loading: "page", error: "page", empty: "page" };
+  const $ = (id) => document.getElementById(id);
+  let version = "after";
+  function render() {
+    const state = $("state").value, theme = $("theme").value, size = $("size").value;
+    const s = version === "before" ? beforeState[state] : state;
+    const file = `${s}-${version}-${theme}-${size}.webp`;
+    $("shot").src = file;
+    $("shot").alt = `${version} · ${state} · ${theme} · ${size}`;
+    $("caption").textContent = `${version === "before" ? "Before (a65e85c)" : "After (candidate)"} · ${file}`;
+    $("note").textContent = notes[state];
+    $("before").setAttribute("aria-pressed", version === "before");
+    $("after").setAttribute("aria-pressed", version === "after");
+    history.replaceState(null, "", `#${state}/${theme}/${size}/${version}`);
+  }
+  function setVersion(v) { version = v; render(); }
+  $("before").onclick = () => setVersion("before");
+  $("after").onclick = () => setVersion("after");
+  for (const id of ["state", "theme", "size"]) $(id).onchange = render;
+  addEventListener("keydown", (e) => {
+    if (e.target.tagName === "SELECT") return;
+    const key = e.key.toLowerCase();
+    if (key === "b") setVersion("before");
+    else if (key === "a") setVersion("after");
+    else if (e.key === " ") { e.preventDefault(); setVersion(version === "after" ? "before" : "after"); }
+  });
+  const [state, theme, size, v] = location.hash.slice(1).split("/");
+  if (state in notes) $("state").value = state;
+  if (theme) $("theme").value = theme;
+  if (size) $("size").value = size;
+  if (v === "before" || v === "after") version = v;
+  render();
+</script>
+</body>
+</html>

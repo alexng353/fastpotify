@@ -654,6 +654,21 @@ pub fn apply_flags(app: &mut App, page: Option<&str>, show: Option<&str>) {
                 app.recents.error =
                     (surface == "recents-error").then(|| "Connection interrupted".into());
             }
+            "radio-loading" | "radio-error" | "radio-empty" => {
+                if let Page::Radio(id) = app.page().clone()
+                    && let Some(page) = app.radio_pages.get_mut(&id)
+                {
+                    // Radio pages carry their seed, so the header renders without a station.
+                    if let Some(station) = page.station.get() {
+                        page.seed = Some(station.seed.clone());
+                    }
+                    page.station = match surface {
+                        "radio-loading" => Loadable::Loading,
+                        "radio-error" => Loadable::Failed("Connection interrupted".into()),
+                        _ => Loadable::Failed(crate::radio::EMPTY_STATION.into()),
+                    };
+                }
+            }
             "lyrics-follow"
             | "lyrics-empty"
             | "lyrics-loading"
@@ -923,6 +938,30 @@ mod tests {
                 .get()
                 .is_some()
         );
+    }
+
+    #[cfg(feature = "demo")]
+    #[test]
+    fn demo_radio_states_keep_the_seed_header() {
+        for (surface, expected) in [
+            ("radio-loading", None),
+            ("radio-error", Some("Connection interrupted")),
+            ("radio-empty", Some(crate::radio::EMPTY_STATION)),
+        ] {
+            let (_, mut app) = accessible_app(surface);
+            let id = track(0).id.unwrap();
+            // Without the cached track, only the page's own seed can name it.
+            app.track_cache.remove(&id);
+            apply_flags(&mut app, Some("radio:trk0"), Some(surface));
+            let page = &app.radio_pages[&id];
+            match expected {
+                None => assert!(matches!(page.station, Loadable::Loading)),
+                Some(message) => {
+                    assert!(matches!(&page.station, Loadable::Failed(error) if error == message))
+                }
+            }
+            assert_eq!(app.radio_seed(&id).unwrap().name, track(0).name);
+        }
     }
 
     fn accessible_app(name: &str) -> (egui::Context, App) {

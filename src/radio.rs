@@ -8,6 +8,9 @@ use librespot_protocol::context::Context;
 use crate::api::models::{Album, ArtistRef, ExternalIds, Image, Track};
 use crate::model::Loadable;
 
+/// A station without songs is a retryable error rather than an empty page.
+pub const EMPTY_STATION: &str = "Spotify returned no songs for this radio. Try again.";
+
 #[derive(Clone, Debug, Default)]
 pub struct Station {
     pub seed: Track,
@@ -31,10 +34,7 @@ pub async fn resolve(session: &Session, seed: &str) -> Result<Station> {
         .await
         .context("Couldn't load song radio")?;
     let uris = station_uris(&context)?;
-    ensure!(
-        !uris.is_empty(),
-        "Spotify returned no songs for this radio. Try again."
-    );
+    ensure!(!uris.is_empty(), EMPTY_STATION);
     let image_url = session
         .get_user_attribute("image-url")
         .unwrap_or_else(|| "https://i.scdn.co/image/{file_id}".into());

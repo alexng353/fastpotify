@@ -5389,7 +5389,7 @@ mod load_timing_tests {
             true
         }
         fn log(&self, record: &log::Record<'_>) {
-            if record.target() == "fastpotify::loads" {
+            if record.target() == "spotifast::loads" {
                 self.0
                     .lock()
                     .unwrap()

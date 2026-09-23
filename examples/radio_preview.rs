@@ -7,7 +7,7 @@ fn main() -> anyhow::Result<()> {
     let seed = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "3JA9Jsuxr4xgHXEawAdCp4".into());
-    let dirs = fastpotify::paths::AppDirs::discover();
+    let dirs = spotifast::paths::AppDirs::discover();
     let cache = Cache::new(Some(dirs.credentials_dir().as_path()), None, None, None)?;
     let credentials = cache
         .credentials()
@@ -18,7 +18,7 @@ fn main() -> anyhow::Result<()> {
         .block_on(async move {
             let session = Session::new(SessionConfig::default(), Some(cache));
             session.connect(credentials, false).await?;
-            let station = fastpotify::radio::resolve(&session, &seed).await?;
+            let station = spotifast::radio::resolve(&session, &seed).await?;
             println!(
                 "{} Radio: {} tracks",
                 station.seed.name,

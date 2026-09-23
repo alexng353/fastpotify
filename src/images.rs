@@ -72,7 +72,8 @@ impl ArtLoader {
         self.inner.fetch(url).await
     }
 
-    /// Whether artwork has finished loading from disk or the network.
+    /// Whether artwork has loaded, without starting a download.
+    /// Bytes may be released after egui creates its texture; eviction forgets both.
     pub fn is_ready(&self, url: &str) -> bool {
         matches!(
             self.inner
@@ -95,19 +96,6 @@ impl ArtLoader {
         {
             *last_used = Instant::now();
         }
-    }
-
-    /// Whether artwork has loaded, without starting a download.
-    /// Bytes may be released after egui creates its texture; eviction forgets both.
-    pub fn is_ready(&self, url: &str) -> bool {
-        matches!(
-            self.inner
-                .entries
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .get(url),
-            Some(Entry::Ready { .. })
-        )
     }
 
     /// Evicts failed entries and the oldest artwork above the memory limit.

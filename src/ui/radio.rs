@@ -31,7 +31,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, id: &str) {
         app,
         ui,
         Hero {
-            image,
+            images: collection::HeroImages {
+                image,
+                ..Default::default()
+            },
             liked: false,
             kind: "Song radio",
             title: &title,

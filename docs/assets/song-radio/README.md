@@ -1,10 +1,11 @@
 # Song-radio browsing evidence
 
-Open [`index.html`](index.html) for the visual comparison. It has state, theme
+Open [`review.html`](review.html) for the visual comparison. It has state, theme
 and window-size selectors and Before/After controls. The states are the radio
 page, the song menu open, loading, error with retry, and an empty station.
 
-Baseline: upstream main `a65e85c`. Candidate: branch `codex/song-radio-browsing`.
+Baseline: upstream main `a65e85c`. Candidate: the PR 359 commit that
+adds these captures.
 All captures come from Linux (X11 under Xvfb) in demo mode. Each capture uses
 fresh, isolated configuration and state. Windows are 1240x800 and 760x800.
 Demo mode makes no Spotify requests.

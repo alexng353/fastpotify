@@ -25,14 +25,15 @@
   figure { margin: 0; overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
   figure img { display: block; max-width: none; }
   figcaption { padding: 6px 10px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); }
+  h2 { font-size: 16px; margin: 24px 0 0; }
   ul { padding-left: 20px; }
 </style>
 </head>
 <body>
 <main>
   <h1>PR 359: browse song radio without interrupting playback</h1>
-  <p class="muted">Baseline: upstream main <code>a65e85c</code>. Candidate: branch
-    <code>codex/song-radio-browsing</code>. Every capture was made on Linux (Arch, Xvfb/X11)
+  <p class="muted">Baseline: upstream main <code>a65e85c</code>. Candidate: the PR 359 commit
+    that adds these captures. Every capture was made on Linux (Arch, Xvfb/X11)
     in demo mode, with fresh, isolated configuration and state for each capture. Demo mode makes no Spotify requests.</p>
   <p>Before, <b>Go to song radio</b> replaced the queue and started the station at once. Now it opens the
     station as its own page and leaves the current music and queue alone. A new <b>Start song radio</b> item
@@ -73,7 +74,7 @@
     <figcaption id="caption"></figcaption>
   </figure>
 
-  <h2 style="font-size:16px;margin-top:24px">Remaining checks</h2>
+  <h2>Remaining checks</h2>
   <ul>
     <li>Loading a real station while signed in: demo mode does not contact Spotify, so these captures check
       layout only. Unit tests cover the resolver's handling of responses.</li>
@@ -112,8 +113,9 @@
   for (const id of ["state", "theme", "size"]) $(id).onchange = render;
   addEventListener("keydown", (e) => {
     if (e.target.tagName === "SELECT") return;
-    if (e.key === "b" || e.key === "B") setVersion("before");
-    else if (e.key === "a" || e.key === "A") setVersion("after");
+    const key = e.key.toLowerCase();
+    if (key === "b") setVersion("before");
+    else if (key === "a") setVersion("after");
     else if (e.key === " ") { e.preventDefault(); setVersion(version === "after" ? "before" : "after"); }
   });
   const [state, theme, size, v] = location.hash.slice(1).split("/");

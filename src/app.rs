@@ -13999,22 +13999,22 @@ mod tests {
         app.radio_pages
             .insert("open".into(), crate::radio::RadioPage::default());
         app.open(Page::Radio("open".into()));
+        let base = Instant::now();
         for i in 0..12 {
             app.radio_pages
                 .insert(format!("r{i}"), crate::radio::RadioPage::default());
-            app.page_used
-                .insert(Page::Radio(format!("r{i}")), Instant::now());
-            std::thread::sleep(Duration::from_millis(1));
+            app.page_used.insert(
+                Page::Radio(format!("r{i}")),
+                base + Duration::from_millis(i),
+            );
         }
-        app.page_used.insert(
-            Page::Radio("open".into()),
-            Instant::now() - Duration::from_secs(60),
-        );
+        app.page_used
+            .insert(Page::Radio("open".into()), base - Duration::from_secs(60));
         app.evict_stale_pages();
         assert!(app.radio_pages.contains_key("open"), "the open radio stays");
         assert!(!app.radio_pages.contains_key("r0"), "the oldest radio goes");
         assert!(app.radio_pages.contains_key("r11"));
-        assert!(app.radio_pages.len() <= 8);
+        assert_eq!(app.radio_pages.len(), 8);
         assert!(!app.page_used.contains_key(&Page::Radio("r0".into())));
     }
 

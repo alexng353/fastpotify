@@ -229,8 +229,9 @@ Song-radio pages resolve a station and read its track metadata through the
 existing librespot session. Browsing does not load audio, activate Spotify
 Connect, or replace the current queue. These requests do not use the shared
 Web API quota. As on other song lists, checking which of the station's songs
-are saved uses the Web API; songs whose saved state is already known are not
-checked again. Playback begins only when a play control or **Start song
+are saved is a Web API library read: it uses your personal app when one is set
+up, and the shared quota otherwise. Songs whose saved state is already known
+are not checked again. Playback begins only when a play control or **Start song
 radio** is used. The station can differ from Spotify’s own radio playlist.
 Browsing neither creates a playlist nor writes listening history.
 

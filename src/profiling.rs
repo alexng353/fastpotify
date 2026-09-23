@@ -30,7 +30,7 @@ impl LoadTimer {
     }
 
     pub(crate) fn finish(&mut self, outcome: &str, details: impl Display) {
-        log::info!(target: "fastpotify::loads",
+        log::info!(target: "spotifast::loads",
             "{} {} elapsed_ms={:.3} {} {}",
             outcome, self.operation, self.started.elapsed().as_secs_f64() * 1000.0,
             self.context, details);

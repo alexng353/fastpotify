@@ -499,6 +499,40 @@ mod tests {
     }
 
     #[test]
+    fn unplayable_songs_offer_no_radio() {
+        let ctx = egui::Context::default();
+        crate::theme::install(&ctx);
+        for track in [
+            Track {
+                uri: "spotify:local:Artist:Album:Song:180".into(),
+                is_local: true,
+                ..Default::default()
+            },
+            Track {
+                is_playable: Some(false),
+                ..seed_track()
+            },
+        ] {
+            let mut app = app();
+            let item = PlayableItem::Track(track);
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                crate::ui::widgets::item_menu(ui, &mut app, &item, None, None)
+            });
+            output.textures_delta.clear();
+            for label in ["Go to song radio", "Start song radio"] {
+                assert!(
+                    !output
+                        .shapes
+                        .iter()
+                        .any(|shape| text_position(&shape.shape, label).is_some()),
+                    "{label} must not be offered for {}",
+                    item.uri()
+                );
+            }
+        }
+    }
+
+    #[test]
     fn radio_controls_browse_play_and_refresh_independently() {
         let mut app = app();
         let item = PlayableItem::Track(Track {

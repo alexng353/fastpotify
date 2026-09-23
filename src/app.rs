@@ -5523,6 +5523,7 @@ impl App {
         const MAX_ALBUM_PAGES: usize = 16;
         const MAX_ARTIST_PAGES: usize = 10;
         const MAX_SHOW_PAGES: usize = 8;
+        const MAX_RADIO_PAGES: usize = 8;
         const MAX_TRACK_CACHE: usize = 800;
 
         let mut protected_playlists = HashSet::new();
@@ -5534,6 +5535,7 @@ impl App {
         let mut protected_albums = HashSet::new();
         let mut protected_artists = HashSet::new();
         let mut protected_shows = HashSet::new();
+        let mut protected_radios = HashSet::new();
         match self.page() {
             Page::Playlist(id) => {
                 protected_playlists.insert(id.clone());
@@ -5546,6 +5548,9 @@ impl App {
             }
             Page::Show(id) => {
                 protected_shows.insert(id.clone());
+            }
+            Page::Radio(id) => {
+                protected_radios.insert(id.clone());
             }
             _ => {}
         }
@@ -5565,6 +5570,9 @@ impl App {
                 }
                 "show" => {
                     protected_shows.insert(id.to_string());
+                }
+                "station" => {
+                    protected_radios.insert(id.to_string());
                 }
                 _ => {}
             }
@@ -5597,11 +5605,19 @@ impl App {
             &protected_shows,
             MAX_SHOW_PAGES,
         );
+        evict_lru_map(
+            &mut self.radio_pages,
+            &self.page_used,
+            |id| Page::Radio(id.to_string()),
+            &protected_radios,
+            MAX_RADIO_PAGES,
+        );
         self.page_used.retain(|page, _| match page {
             Page::Playlist(id) => self.playlist_pages.contains_key(id),
             Page::Album(id) => self.album_pages.contains_key(id),
             Page::Artist(id) => self.artist_pages.contains_key(id),
             Page::Show(id) => self.show_pages.contains_key(id),
+            Page::Radio(id) => self.radio_pages.contains_key(id),
             _ => true,
         });
         if self.track_cache.len() > MAX_TRACK_CACHE {
@@ -6804,6 +6820,7 @@ impl App {
         if matches!(
             &action,
             Action::Open(_)
+                | Action::OpenRadio(_)
                 | Action::OpenUri(_)
                 | Action::OpenLink(_)
                 | Action::FocusSearch
@@ -13974,6 +13991,51 @@ mod tests {
             !app.track_cache.contains_key("decoy"),
             "an untouched cached track can go"
         );
+    }
+
+    #[test]
+    fn evict_stale_pages_caps_radio_pages_but_keeps_the_open_one() {
+        let mut app = headless_app();
+        app.radio_pages
+            .insert("open".into(), crate::radio::RadioPage::default());
+        app.open(Page::Radio("open".into()));
+        for i in 0..12 {
+            app.radio_pages
+                .insert(format!("r{i}"), crate::radio::RadioPage::default());
+            app.page_used
+                .insert(Page::Radio(format!("r{i}")), Instant::now());
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        app.page_used.insert(
+            Page::Radio("open".into()),
+            Instant::now() - Duration::from_secs(60),
+        );
+        app.evict_stale_pages();
+        assert!(app.radio_pages.contains_key("open"), "the open radio stays");
+        assert!(!app.radio_pages.contains_key("r0"), "the oldest radio goes");
+        assert!(app.radio_pages.contains_key("r11"));
+        assert!(app.radio_pages.len() <= 8);
+        assert!(!app.page_used.contains_key(&Page::Radio("r0".into())));
+    }
+
+    #[test]
+    fn opening_song_radio_leaves_lyrics_fullscreen() {
+        let mut app = headless_app();
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            app.apply(Action::SetLyricsFullscreen(true), ui.ctx());
+            assert!(app.lyrics_fullscreen.is_some());
+            app.apply(
+                Action::OpenRadio(Box::new(Track {
+                    uri: "spotify:track:seed".into(),
+                    ..Track::default()
+                })),
+                ui.ctx(),
+            );
+        });
+        output.textures_delta.clear();
+        assert_eq!(app.lyrics_fullscreen, None);
+        assert_eq!(app.page(), &Page::Radio("seed".into()));
     }
 
     #[test]

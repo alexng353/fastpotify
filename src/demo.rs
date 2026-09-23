@@ -654,6 +654,24 @@ pub fn apply_flags(app: &mut App, page: Option<&str>, show: Option<&str>) {
                 app.recents.error =
                     (surface == "recents-error").then(|| "Connection interrupted".into());
             }
+            // The resolver reports a station without songs as a retryable error.
+            "radio-loading" | "radio-error" | "radio-empty" => {
+                if let Page::Radio(id) = app.page().clone()
+                    && let Some(page) = app.radio_pages.get_mut(&id)
+                {
+                    // Keep the header the menu would have provided.
+                    if let Some(station) = page.station.get() {
+                        page.seed = Some(station.seed.clone());
+                    }
+                    page.station = match surface {
+                        "radio-loading" => Loadable::Loading,
+                        "radio-error" => Loadable::Failed("Connection interrupted".into()),
+                        _ => Loadable::Failed(
+                            "Spotify returned no songs for this radio. Try again.".into(),
+                        ),
+                    };
+                }
+            }
             "lyrics-follow"
             | "lyrics-empty"
             | "lyrics-loading"
@@ -923,6 +941,31 @@ mod tests {
                 .get()
                 .is_some()
         );
+    }
+
+    #[cfg(feature = "demo")]
+    #[test]
+    fn demo_radio_states_keep_the_seed_header() {
+        for (surface, expected) in [
+            ("radio-loading", None),
+            ("radio-error", Some("Connection interrupted")),
+            (
+                "radio-empty",
+                Some("Spotify returned no songs for this radio. Try again."),
+            ),
+        ] {
+            let (_, mut app) = accessible_app(surface);
+            apply_flags(&mut app, Some("radio:trk0"), Some(surface));
+            let id = track(0).id.unwrap();
+            let page = &app.radio_pages[&id];
+            match expected {
+                None => assert!(matches!(page.station, Loadable::Loading)),
+                Some(message) => {
+                    assert!(matches!(&page.station, Loadable::Failed(error) if error == message))
+                }
+            }
+            assert_eq!(app.radio_seed(&id).unwrap().name, track(0).name);
+        }
     }
 
     fn accessible_app(name: &str) -> (egui::Context, App) {

@@ -6,7 +6,6 @@ use librespot_metadata::{Metadata, Playlist, Track as MetadataTrack};
 use serde::Deserialize;
 
 use crate::api::models::{Album, ArtistRef, ExternalIds, Image, Track};
-use crate::model::Loadable;
 
 #[derive(Clone, Debug, Default)]
 pub struct Station {
@@ -28,14 +27,6 @@ impl Station {
         tracks.insert(0, seed.clone());
         Self { seed, tracks }
     }
-}
-
-#[derive(Default)]
-pub struct RadioPage {
-    /// Keep the header independent of recommendation requests and cache eviction.
-    pub seed: Option<Track>,
-    pub station: Loadable<Station>,
-    pub generation: u64,
 }
 
 /// Reading a radio playlist never activates Connect or loads audio.

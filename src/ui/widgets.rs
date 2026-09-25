@@ -910,6 +910,9 @@ pub fn item_menu(
                     track: Box::new(track.clone()),
                 });
             }
+            if menu_item(ui, &palette, Some(Icon::Play), "Start song radio") {
+                app.actions.push(Action::PlayTrackRadio(uri.clone()));
+            }
             let artists: Vec<&ArtistRef> = track
                 .artists
                 .iter()

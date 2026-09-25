@@ -168,6 +168,10 @@ impl Page {
                     "artist" => Page::Artist(id.into()),
                     "show" => Page::Show(id.into()),
                     "radio" if crate::util::station_uri(id).is_some() => Page::Radio(id.into()),
+                    // Personal builds previously stored only the track ID.
+                    "radio" if !id.is_empty() && !id.contains(':') => {
+                        Page::Radio(format!("spotify:track:{id}"))
+                    }
                     _ => return None,
                 }
             }
@@ -176,6 +180,9 @@ impl Page {
 
     /// Opens whatever a Spotify URI points at.
     pub fn from_uri(uri: &str) -> Option<Self> {
+        if let Some(seed) = crate::util::station_seed(uri) {
+            return Some(Self::Radio(seed));
+        }
         let mut parts = uri.split(':');
         let _ = parts.next()?;
         let kind = parts.next()?;
@@ -927,6 +934,7 @@ pub enum Action {
         uri: String,
         track: Box<Track>,
     },
+    PlayTrackRadio(String),
     /// Extracts a page's tint while its library row is hovered.
     PrepareTint(String),
     OpenUri(String),

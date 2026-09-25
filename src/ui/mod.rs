@@ -669,12 +669,15 @@ mod tests {
             Color32::from_rgb(100, 150, 200),
         );
         app.apply(
-            Action::OpenRadio(Box::new(track)),
+            Action::OpenSongRadio {
+                uri: "spotify:track:seed".into(),
+                track: Box::new(track),
+            },
             &egui::Context::default(),
         );
-        assert!(app.track_cache.is_empty());
+        assert!(app.track_cache.contains_key("seed"));
         assert!(matches!(
-            app.radio_pages["seed"].station,
+            app.radio_pages["spotify:track:seed"].songs,
             crate::model::Loadable::Loading
         ));
         assert_eq!(page_tint(&mut app), Some(Color32::from_rgb(100, 150, 200)));

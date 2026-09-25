@@ -3138,12 +3138,26 @@ impl Worker {
             let engine = Arc::clone(&engine);
             let commands = self.commands.clone();
             tokio::spawn(async move {
+                let mut timing = LoadTimer::new(
+                    "radio",
+                    format!("source=librespot seed={seed:?} generation={generation}"),
+                );
                 let result = match crate::util::station_uri(&seed) {
                     Some(station) => {
-                        match tokio::time::timeout(
-                            RADIO_TIMEOUT,
-                            session_reads::station(engine.session(), &station),
-                        )
+                        // Personal song radio resolves playlist metadata in batches.
+                        let timeout = if crate::util::uri_kind(&seed) == Some("track") {
+                            Duration::from_secs(45)
+                        } else {
+                            RADIO_TIMEOUT
+                        };
+                        match tokio::time::timeout(timeout, async {
+                            if crate::util::uri_kind(&seed) == Some("track") {
+                                let id = crate::util::uri_id(&seed).unwrap_or_default();
+                                engine.song_radio(id).await.map(|radio| radio.tracks)
+                            } else {
+                                session_reads::station(engine.session(), &station).await
+                            }
+                        })
                         .await
                         {
                             Ok(Ok(tracks)) => Ok(tracks),
@@ -3156,6 +3170,7 @@ impl Worker {
                     }
                     None => Err("There is no radio for this item.".into()),
                 };
+                timing.result(&result, |tracks| format!("items={}", tracks.len()));
                 let _ = commands.send(Command::RadioResolved {
                     session_generation,
                     seed,

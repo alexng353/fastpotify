@@ -3611,11 +3611,16 @@ impl App {
     // ---- loading ---------------------------------------------------------------
 
     fn load_playlists(&mut self) {
-        if self.library.playlists_pending.is_some() {
+        if self
+            .library
+            .playlists_pending
+            .as_ref()
+            .is_some_and(Vec::is_empty)
+        {
             return;
         }
         self.library.playlists_pending = Some(Vec::new());
-        if self.library.playlists.get().is_none() {
+        if self.library_cache.is_none() || self.library.playlists.get().is_none() {
             self.library.playlists = Loadable::Loading;
         }
         self.library.playlists_next = None;
@@ -5217,6 +5222,11 @@ impl App {
                         pending.clear();
                     }
                     pending.extend(page.items);
+                    // A first load can show its arriving pages; a refresh keeps
+                    // the last complete snapshot until its replacement is whole.
+                    if self.library_cache.is_none() {
+                        self.library.playlists = Loadable::Loaded(pending.clone());
+                    }
                     self.library.playlists_next = next_offset;
                     if next_offset.is_some() {
                         self.load_more(Page::Home);
@@ -8285,7 +8295,6 @@ impl App {
                     self.tint_for(Some(&url));
                 }
             }
-            Action::OpenRadio(track) => self.open_radio(*track),
             Action::OpenUri(uri) => {
                 if let Some(page) = Page::from_uri(&uri) {
                     self.open(page);
@@ -8327,6 +8336,34 @@ impl App {
                 request.offset_uri = offset_uri;
                 request.offset_position = offset_index;
                 self.play_request(request, false);
+            }
+            Action::PlayTrackRadio(uri) => {
+                // Load the station URI as a 50-track local context. Autoplay
+                // from a bare track fails inside librespot and clears the queue.
+                // The Web API cannot start a station on another device.
+                let id = util::uri_id(&uri).unwrap_or_default();
+                let station = format!("spotify:station:track:{id}");
+                self.local_list = None;
+                self.queue_start_pending = Some(Target::Local);
+                self.backend.player(PlayerCommand::Load(LoadSpec {
+                    context_uri: Some(station.clone()),
+                    play: true,
+                    autoplay: false,
+                    ..LoadSpec::default()
+                }));
+                self.optimistic_playing = Some((true, Instant::now()));
+                // Show the station queue immediately.
+                self.queue_tab = QueueTab::Queue;
+                self.assumed_context = Some(AssumedContext {
+                    uri: station,
+                    shuffle: None,
+                    at: Instant::now(),
+                });
+                if !matches!(self.page(), Page::Queue) && !self.show_queue_panel {
+                    self.show_queue_panel = true;
+                    self.show_lyrics_panel = false;
+                }
+                self.refresh_queue(true);
             }
             Action::PlayUris { uris, index } => {
                 if uris.is_empty() {
@@ -16567,6 +16604,44 @@ mod tests {
         );
     }
 
+    #[test]
+    fn saved_personal_radio_pages_use_the_upstream_seed_format() {
+        let expected = Some(Page::Radio("spotify:track:seed".into()));
+        assert_eq!(Page::decode("radio:seed"), expected);
+        assert_eq!(Page::decode("radio:spotify:track:seed"), expected);
+        assert_eq!(Page::from_uri("spotify:station:track:seed"), expected);
+        assert_eq!(Page::decode("radio:spotify:show:seed"), None);
+    }
+
+    #[test]
+    fn song_radio_navigation_does_not_start_playback() {
+        let mut app = headless_app();
+        app.backend.set_offline(true);
+        app.open(Page::LikedSongs);
+        let radio = Page::from_uri("spotify:station:track:3JA9Jsuxr4xgHXEawAdCp4")
+            .expect("a station must have a browsable page");
+        app.open(radio.clone());
+        assert_eq!(app.page(), &radio);
+        assert!(app.optimistic_playing.is_none());
+        assert!(app.assumed_context.is_none());
+        assert!(app.queued_play.is_none());
+        assert!(app.can_go_back());
+    }
+
+    #[test]
+    fn song_radio_start_selects_queue_instead_of_recents() {
+        let mut app = headless_app();
+        app.backend.set_offline(true);
+        app.show_queue_panel = true;
+        app.queue_tab = QueueTab::Recents;
+        app.apply(
+            Action::PlayTrackRadio("spotify:track:xyz".into()),
+            &egui::Context::default(),
+        );
+        assert!(app.show_queue_panel);
+        assert_eq!(app.queue_tab, QueueTab::Queue);
+    }
+
     fn radio_song(id: &str, artist: &str) -> Track {
         Track {
             id: Some(id.into()),
@@ -22551,7 +22626,7 @@ mod tests {
 
         // #when
         app.actions
-            .push(Action::OpenLink("spotify:station:track:t1".into()));
+            .push(Action::OpenLink("spotify:station:show:sh1".into()));
         app.apply_actions(&ctx);
 
         // #then
@@ -22863,17 +22938,24 @@ mod tests {
             uri: format!("spotify:playlist:{id}"),
             ..Default::default()
         };
-        let response = |offset, ids: &[&str], next: Option<&str>| ApiResponse::MyPlaylists {
-            offset,
-            result: Ok(crate::api::models::Page {
-                items: ids.iter().map(|id| playlist(id)).collect(),
+        let response =
+            |generation, offset, ids: &[&str], next: Option<&str>| ApiResponse::MyPlaylists {
                 offset,
-                limit: 1,
-                total: 2,
-                next: next.map(str::to_owned),
-            }),
-        };
-        app.handle_api(response(0, &["old"], None));
+                generation,
+                result: Ok(crate::api::models::Page {
+                    items: ids.iter().map(|id| playlist(id)).collect(),
+                    offset,
+                    limit: 1,
+                    total: 2,
+                    next: next.map(str::to_owned),
+                }),
+            };
+        app.handle_api(response(
+            app.library.playlists_generation,
+            0,
+            &["old"],
+            None,
+        ));
         app.save_session();
         let dirs = app.dirs.clone();
         drop(app);
@@ -22896,7 +22978,12 @@ mod tests {
             ..Default::default()
         })));
         assert_eq!(app.library.playlists.get().unwrap(), &[playlist("old")]);
-        app.handle_api(response(0, &["new"], Some("next")));
+        app.handle_api(response(
+            app.library.playlists_generation,
+            0,
+            &["new"],
+            Some("next"),
+        ));
         assert_eq!(app.library.playlists.get().unwrap(), &[playlist("old")]);
         assert_eq!(
             app.library_cache.as_ref().unwrap().playlists,
@@ -22904,12 +22991,23 @@ mod tests {
         );
         app.handle_api(ApiResponse::MyPlaylists {
             offset: 1,
+            generation: app.library.playlists_generation,
             result: Err(crate::api::ApiError::RateLimited),
         });
         assert_eq!(app.library.playlists.get().unwrap(), &[playlist("old")]);
         app.load_playlists();
-        app.handle_api(response(0, &["new"], Some("next")));
-        app.handle_api(response(1, &["second"], None));
+        app.handle_api(response(
+            app.library.playlists_generation,
+            0,
+            &["new"],
+            Some("next"),
+        ));
+        app.handle_api(response(
+            app.library.playlists_generation,
+            1,
+            &["second"],
+            None,
+        ));
         assert_eq!(
             app.library.playlists.get().unwrap(),
             &[playlist("new"), playlist("second")]

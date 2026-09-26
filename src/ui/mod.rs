@@ -624,7 +624,7 @@ fn toasts(app: &mut App, ctx: &egui::Context, bottom_offset: f32) {
 }
 
 #[cfg(test)]
-mod tests {
+mod window_chrome_tests {
     use super::*;
 
     #[test]

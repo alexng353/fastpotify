@@ -276,6 +276,9 @@ pub struct NetActivity {
     in_flight: AtomicUsize,
     /// Milliseconds since `started_at` when the oldest current burst began.
     busy_since_ms: AtomicU64,
+    /// Milliseconds since `started_at` until which Spotify asked us to back
+    /// off. Home reads this to explain a wait instead of spinning silently.
+    rate_limited_until_ms: AtomicU64,
 }
 
 impl Default for NetActivity {
@@ -284,6 +287,7 @@ impl Default for NetActivity {
             started_at: Instant::now(),
             in_flight: AtomicUsize::new(0),
             busy_since_ms: AtomicU64::new(0),
+            rate_limited_until_ms: AtomicU64::new(0),
         }
     }
 }
@@ -310,6 +314,19 @@ impl NetActivity {
                 .now_ms()
                 .saturating_sub(self.busy_since_ms.load(Ordering::SeqCst))
                 >= for_at_least.as_millis() as u64
+    }
+
+    fn note_rate_limit(&self, wait: Duration) {
+        let until = self.now_ms() + wait.as_millis() as u64;
+        self.rate_limited_until_ms
+            .fetch_max(until, Ordering::SeqCst);
+    }
+
+    /// How much longer Spotify's latest rate limit lasts, if it still does.
+    pub fn rate_limited_for(&self) -> Option<Duration> {
+        let until = self.rate_limited_until_ms.load(Ordering::SeqCst);
+        let now = self.now_ms();
+        (until > now).then(|| Duration::from_millis(until - now))
     }
 }
 
@@ -499,6 +516,7 @@ impl ApiClient {
                 );
                 drop(permit);
                 self.extend_cooldown(wait).await;
+                self.activity.note_rate_limit(wait);
                 if !queue_write && attempt > RATE_LIMIT_RETRIES {
                     return Err(ApiError::RateLimited);
                 }
@@ -1504,5 +1522,17 @@ mod tests {
         shared.extend_cooldown(Duration::from_secs(10)).await;
         assert!(*shared.cooldown_until.lock().await > Instant::now());
         assert!(*personal.cooldown_until.lock().await <= Instant::now());
+    }
+
+    #[test]
+    fn the_interface_sees_the_longest_pending_rate_limit() {
+        let activity = NetActivity::default();
+        assert_eq!(activity.rate_limited_for(), None);
+        activity.note_rate_limit(Duration::from_secs(29));
+        activity.note_rate_limit(Duration::from_secs(1));
+        let left = activity.rate_limited_for().unwrap();
+        assert!(left > Duration::from_secs(27) && left <= Duration::from_secs(29));
+        activity.note_rate_limit(Duration::ZERO);
+        assert!(activity.rate_limited_for().is_some());
     }
 }

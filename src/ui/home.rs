@@ -20,6 +20,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     ui.add_space(12.0);
     quick_access(app, ui);
     ui.add_space(16.0);
+    api_notice(app, ui);
 
     if app.settings.home.made_for_you.visible {
         made_for_you(app, ui);
@@ -31,6 +32,125 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     if app.settings.home.recommendations.visible {
         recommendations(app, ui);
     }
+}
+
+fn waiting<T>(loadable: &Loadable<T>) -> bool {
+    matches!(loadable, Loadable::NotLoaded | Loadable::Loading)
+}
+
+/// Whether any visible shelf still shows its loading row.
+fn shelves_waiting(app: &App) -> bool {
+    let home = &app.home;
+    waiting(&home.recently_played)
+        || waiting(&home.top_artists)
+        || waiting(&home.top_tracks)
+        || (app.settings.home.recommendations.visible && waiting(&home.recommendations))
+        || (app.settings.home.made_for_you.visible
+            && home.discover.values().any(Loadable::is_loading))
+}
+
+/// What Home should say while its shelves wait on Spotify, if anything.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ApiNotice {
+    /// The personal app lost its grant, so the shared app serves everything.
+    AuthorizePersonalApp { rate_limited: bool },
+    /// Spotify asked for a pause; `seconds` until the next attempt.
+    RateLimited {
+        seconds: u64,
+        suggest_personal_app: bool,
+    },
+}
+
+pub(crate) fn api_notice_for(
+    waiting: bool,
+    needs_authorizing: bool,
+    has_personal_app: bool,
+    rate_limited_for: Option<std::time::Duration>,
+) -> Option<ApiNotice> {
+    if !waiting {
+        return None;
+    }
+    if needs_authorizing {
+        return Some(ApiNotice::AuthorizePersonalApp {
+            rate_limited: rate_limited_for.is_some(),
+        });
+    }
+    rate_limited_for.map(|wait| ApiNotice::RateLimited {
+        seconds: wait.as_secs_f32().ceil().max(1.0) as u64,
+        suggest_personal_app: !has_personal_app,
+    })
+}
+
+/// Explains a stalled Home instead of leaving every shelf spinning.
+fn api_notice(app: &mut App, ui: &mut egui::Ui) {
+    let rate_limited_for = app.backend.activity().rate_limited_for();
+    let has_personal_app = app
+        .settings
+        .web_client_id
+        .as_deref()
+        .is_some_and(|id| !id.trim().is_empty());
+    let Some(notice) = api_notice_for(
+        shelves_waiting(app),
+        app.personal_app_needs_authorizing(),
+        has_personal_app,
+        rate_limited_for,
+    ) else {
+        return;
+    };
+    if rate_limited_for.is_some() {
+        // Keep the countdown moving, and drop the notice once it lapses.
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(500));
+    }
+    let (message, settings_button) = match notice {
+        ApiNotice::AuthorizePersonalApp { rate_limited: true } => (
+            gettext(
+                app.locale,
+                "Spotify is rate-limiting the shared app. Authorize your personal app again to load Home.",
+            )
+            .into_owned(),
+            true,
+        ),
+        ApiNotice::AuthorizePersonalApp { rate_limited: false } => (
+            gettext(
+                app.locale,
+                "Your personal Spotify app needs authorizing again. Until then, Home loads through the shared app.",
+            )
+            .into_owned(),
+            true,
+        ),
+        ApiNotice::RateLimited {
+            seconds,
+            suggest_personal_app,
+        } => (
+            // Translators: {seconds} is a whole number of seconds.
+            gettext(
+                app.locale,
+                "Spotify is rate-limiting requests. Retrying in {seconds} s.",
+            )
+            .replace("{seconds}", &seconds.to_string()),
+            suggest_personal_app,
+        ),
+    };
+    let palette = app.palette;
+    ui.horizontal_wrapped(|ui| {
+        ui.add_space(8.0);
+        theme::icon(ui, Icon::Clock, 16.0, palette.accent);
+        theme::text(ui, &message, theme::regular(13.0), palette.secondary);
+        if settings_button
+            && theme::soft_button(
+                ui,
+                &palette,
+                Some(Icon::Settings),
+                &gettext(app.locale, "Open Settings"),
+                false,
+            )
+            .clicked()
+        {
+            app.actions.push(Action::Open(Page::Settings));
+        }
+    });
+    ui.add_space(16.0);
 }
 
 struct Tile {
@@ -694,6 +814,41 @@ fn recommendations(app: &mut App, ui: &mut egui::Ui) {
 mod tests {
     use super::*;
     use crate::api::models::ResumePoint;
+
+    #[test]
+    fn a_stalled_home_says_why_instead_of_spinning() {
+        use std::time::Duration;
+        let limited = Some(Duration::from_millis(28_200));
+        // Nothing waiting: no notice, whatever Spotify says.
+        assert_eq!(api_notice_for(false, true, true, limited), None);
+        // A lost personal grant comes first: it is the fix.
+        assert_eq!(
+            api_notice_for(true, true, true, limited),
+            Some(ApiNotice::AuthorizePersonalApp { rate_limited: true })
+        );
+        assert_eq!(
+            api_notice_for(true, true, true, None),
+            Some(ApiNotice::AuthorizePersonalApp {
+                rate_limited: false
+            })
+        );
+        assert_eq!(
+            api_notice_for(true, false, false, limited),
+            Some(ApiNotice::RateLimited {
+                seconds: 29,
+                suggest_personal_app: true
+            })
+        );
+        assert_eq!(
+            api_notice_for(true, false, true, Some(Duration::from_millis(10))),
+            Some(ApiNotice::RateLimited {
+                seconds: 1,
+                suggest_personal_app: false
+            })
+        );
+        // Waiting without a rate limit is ordinary loading.
+        assert_eq!(api_notice_for(true, false, true, None), None);
+    }
 
     fn show(id: &str) -> Show {
         Show {

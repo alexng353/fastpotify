@@ -1088,6 +1088,17 @@ impl App {
         self.user.as_ref().map(|user| user.id.as_str())
     }
 
+    /// A personal app is set up but not in use, so every request falls back
+    /// to the shared app. Its grant lost a scope, or it was never authorized.
+    pub fn personal_app_needs_authorizing(&self) -> bool {
+        self.settings
+            .web_client_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .is_some_and(|wanted| self.web_app.as_deref() != Some(wanted))
+    }
+
     /// The library list's entry for a playlist, when it holds one.
     fn library_entry(&self, id: &str) -> Option<&Playlist> {
         self.library
@@ -5142,6 +5153,9 @@ impl App {
                             seed_artists: Vec::new(),
                             generation,
                         });
+                    } else if self.home.recommendations.get().is_none() {
+                        // Nothing to seed from, so no request will answer.
+                        self.home.recommendations = Loadable::Loaded(Vec::new());
                     }
                     let uris: Vec<String> = tracks.iter().map(|track| track.uri.clone()).collect();
                     self.request_contains(uris);
@@ -5149,9 +5163,15 @@ impl App {
                 } else if generation == self.home.generation
                     && offset == 0
                     && let Err(error) = result
-                    && self.home.top_tracks.get().is_none()
                 {
-                    self.home.top_tracks = Loadable::Failed(error.to_string());
+                    // Recommendations are seeded from these tracks; without
+                    // them that shelf would spin forever too.
+                    if self.home.recommendations.get().is_none() {
+                        self.home.recommendations = Loadable::Failed(error.to_string());
+                    }
+                    if self.home.top_tracks.get().is_none() {
+                        self.home.top_tracks = Loadable::Failed(error.to_string());
+                    }
                 }
             }
             ApiResponse::TopArtists { generation, result } => {
@@ -11682,6 +11702,40 @@ mod tests {
             listed_playlists(&app),
             playlist_ids(&["new", "a", "b", "c"])
         );
+    }
+
+    /// Recommendations are seeded from the top tracks. When those fail, or
+    /// give nothing to seed from, the shelf must stop loading too.
+    #[test]
+    fn recommendations_settle_when_top_tracks_cannot_seed_them() {
+        let mut app = headless_app();
+        app.backend.set_offline(true);
+
+        app.load_home(true);
+        let generation = app.home.generation;
+        app.handle_api(ApiResponse::TopTracks {
+            offset: 0,
+            full: false,
+            generation,
+            result: Err(crate::api::ApiError::RateLimited),
+        });
+        assert!(matches!(app.home.top_tracks, Loadable::Failed(_)));
+        assert!(matches!(app.home.recommendations, Loadable::Failed(_)));
+
+        let mut empty = headless_app();
+        empty.backend.set_offline(true);
+        empty.load_home(true);
+        let generation = empty.home.generation;
+        empty.handle_api(ApiResponse::TopTracks {
+            offset: 0,
+            full: false,
+            generation,
+            result: Ok(crate::api::models::Page::default()),
+        });
+        assert!(matches!(
+            &empty.home.recommendations,
+            Loadable::Loaded(tracks) if tracks.is_empty()
+        ));
     }
 
     /// A later page that failed is no longer on its way, so another answer
